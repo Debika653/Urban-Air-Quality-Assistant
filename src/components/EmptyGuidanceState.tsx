@@ -1,10 +1,13 @@
 import { CalendarClock, Home, Leaf, ShieldCheck } from 'lucide-react';
+import { memo } from 'react';
 
 interface EmptyGuidanceStateProps {
   onFocusForm: () => void;
 }
 
-export function EmptyGuidanceState({ onFocusForm }: EmptyGuidanceStateProps) {
+export const EmptyGuidanceState = memo(function EmptyGuidanceState({
+  onFocusForm,
+}: EmptyGuidanceStateProps) {
   return (
     <section
       aria-labelledby="empty-state-heading"
@@ -71,4 +74,4 @@ export function EmptyGuidanceState({ onFocusForm }: EmptyGuidanceStateProps) {
       </div>
     </section>
   );
-}
+});

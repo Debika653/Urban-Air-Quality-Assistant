@@ -1,5 +1,5 @@
 import { Menu, Wind, X } from 'lucide-react';
-import { useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 
 export interface NavSection {
   id: string;
@@ -20,8 +20,29 @@ interface HeaderProps {
   onFocusForm: () => void;
 }
 
-export function Header({ activeSection, onNavigate, onFocusForm }: HeaderProps) {
+export const Header = memo(function Header({
+  activeSection,
+  onNavigate,
+  onFocusForm,
+}: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [mobileMenuOpen]);
 
   const handleNavClick = (sectionId: string) => {
     setMobileMenuOpen(false);
@@ -83,6 +104,7 @@ export function Header({ activeSection, onNavigate, onFocusForm }: HeaderProps) 
           </button>
 
           <button
+            ref={menuButtonRef}
             type="button"
             aria-expanded={mobileMenuOpen}
             aria-controls="mobile-nav-drawer"
@@ -133,4 +155,4 @@ export function Header({ activeSection, onNavigate, onFocusForm }: HeaderProps) 
       )}
     </header>
   );
-}
+});

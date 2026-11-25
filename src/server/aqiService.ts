@@ -4,6 +4,21 @@ import { sanitizeText } from '../shared/airQualitySchema.ts';
 const ALLOWED_GEOCODING_HOST = 'geocoding-api.open-meteo.com';
 const ALLOWED_AIR_QUALITY_HOST = 'air-quality-api.open-meteo.com';
 const REQUEST_TIMEOUT_MS = 4500;
+const AQI_CACHE_TTL_MS = 120_000;
+const AQI_CACHE_MAX_ENTRIES = 50;
+
+interface CachedAqiEntry {
+  reading: LiveAqiReading;
+  expiresAt: number;
+}
+
+const aqiCache = new Map<string, CachedAqiEntry>();
+const inFlightLookups = new Map<string, Promise<LiveAqiReading>>();
+
+export function clearAqiCache(): void {
+  aqiCache.clear();
+  inFlightLookups.clear();
+}
 
 interface GeocodingApiResult {
   results?: Array<{
@@ -45,25 +60,31 @@ function buildUnavailableReading(
   };
 }
 
-export async function fetchLiveAqiForCity(
-  city: string,
-  enabled = true,
-): Promise<LiveAqiReading> {
-  if (!enabled) {
-    return buildUnavailableReading(
-      'disabled',
-      'Live AQI lookup is disabled in your preferences. Enter a manual AQI reading or rely on precautionary guidance.',
-    );
+function writeAqiCache(cacheKey: string, reading: LiveAqiReading): void {
+  if (reading.status !== 'available') {
+    return;
   }
-
-  const cleanCity = sanitizeText(city, 80);
-  if (!cleanCity) {
-    return buildUnavailableReading(
-      'unavailable',
-      'No city was provided for live air-quality lookup.',
-    );
+  const now = Date.now();
+  if (aqiCache.size >= AQI_CACHE_MAX_ENTRIES) {
+    for (const [key, entry] of aqiCache.entries()) {
+      if (entry.expiresAt <= now) {
+        aqiCache.delete(key);
+      }
+    }
+    if (aqiCache.size >= AQI_CACHE_MAX_ENTRIES) {
+      const oldestKey = aqiCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        aqiCache.delete(oldestKey);
+      }
+    }
   }
+  aqiCache.set(cacheKey, {
+    reading,
+    expiresAt: now + AQI_CACHE_TTL_MS,
+  });
+}
 
+async function performLiveAqiLookup(cleanCity: string): Promise<LiveAqiReading> {
   try {
     const geoUrl = new URL(`https://${ALLOWED_GEOCODING_HOST}/v1/search`);
     geoUrl.searchParams.set('name', cleanCity);
@@ -173,4 +194,50 @@ export async function fetchLiveAqiForCity(
       'Live air-quality lookup timed out or could not be reached. No simulated reading was generated; enter a manual AQI if available.',
     );
   }
+}
+
+export async function fetchLiveAqiForCity(
+  city: string,
+  enabled = true,
+): Promise<LiveAqiReading> {
+  if (!enabled) {
+    return buildUnavailableReading(
+      'disabled',
+      'Live AQI lookup is disabled in your preferences. Enter a manual AQI reading or rely on precautionary guidance.',
+    );
+  }
+
+  const cleanCity = sanitizeText(city, 80);
+  if (!cleanCity) {
+    return buildUnavailableReading(
+      'unavailable',
+      'No city was provided for live air-quality lookup.',
+    );
+  }
+
+  const cacheKey = cleanCity.toLowerCase();
+  const cached = aqiCache.get(cacheKey);
+  if (cached) {
+    if (cached.expiresAt > Date.now()) {
+      return cached.reading;
+    }
+    aqiCache.delete(cacheKey);
+  }
+
+  const existingFlight = inFlightLookups.get(cacheKey);
+  if (existingFlight) {
+    return existingFlight;
+  }
+
+  const lookupPromise = performLiveAqiLookup(cleanCity)
+    .then((reading) => {
+      writeAqiCache(cacheKey, reading);
+      return reading;
+    })
+    .finally(() => {
+      inFlightLookups.delete(cacheKey);
+    });
+
+  inFlightLookups.set(cacheKey, lookupPromise);
+  return lookupPromise;
 }

@@ -5,6 +5,7 @@ import {
   Info,
   ShieldAlert,
 } from 'lucide-react';
+import { memo } from 'react';
 import {
   classifyAqiBand,
   type LiveAqiReading,
@@ -36,7 +37,21 @@ function renderBandIcon(severity: ReturnType<typeof classifyAqiBand>['severity']
   }
 }
 
-export function PollutionStatusPanel({
+function formatTimeLabel(isoTimestamp: string | null): string | null {
+  if (!isoTimestamp) {
+    return null;
+  }
+  const parsed = new Date(isoTimestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+export const PollutionStatusPanel = memo(function PollutionStatusPanel({
   city,
   manualAqi,
   liveAqi,
@@ -45,6 +60,7 @@ export function PollutionStatusPanel({
   generatedAt,
 }: PollutionStatusPanelProps) {
   const band = classifyAqiBand(effectiveAqi);
+  const formattedTime = formatTimeLabel(generatedAt);
 
   return (
     <aside
@@ -150,14 +166,11 @@ export function PollutionStatusPanel({
           </div>
         )}
 
-        {generatedAt && (
+        {formattedTime && (
           <div className="flex items-baseline justify-between gap-3 py-2.5">
             <dt className="text-slate-600">Plan generated</dt>
             <dd className="text-right font-mono text-xs tabular-nums text-slate-700">
-              {new Date(generatedAt).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
+              {formattedTime}
             </dd>
           </div>
         )}
@@ -180,4 +193,4 @@ export function PollutionStatusPanel({
       </div>
     </aside>
   );
-}
+});

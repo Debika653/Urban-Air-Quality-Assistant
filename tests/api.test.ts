@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import test from 'node:test';
 import { createApiApp, type ServerDependencies } from '../src/server/app.ts';
-import { fetchLiveAqiForCity } from '../src/server/aqiService.ts';
-import { GeminiServiceError } from '../src/server/geminiService.ts';
-import type { AiGuidanceResponse, LiveAqiReading } from '../src/shared/airQualitySchema.ts';
+import { clearAqiCache, fetchLiveAqiForCity } from '../src/server/aqiService.ts';
+import { buildPromptPayload, GeminiServiceError } from '../src/server/geminiService.ts';
+import {
+  DEFAULT_USER_INPUT,
+  type AiGuidanceResponse,
+  type LiveAqiReading,
+} from '../src/shared/airQualitySchema.ts';
 
 function buildStubGuidance(): AiGuidanceResponse {
   const item = {
@@ -89,6 +93,7 @@ test('GET /api/health returns 200 and hardened security headers without X-Powere
     assert.equal(res.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
     assert.equal(res.headers.get('x-dns-prefetch-control'), 'off');
     assert.equal(res.headers.get('x-permitted-cross-domain-policies'), 'none');
+    assert.equal(res.headers.get('cache-control'), 'no-store');
     assert.equal(res.headers.get('x-powered-by'), null);
     const body = (await res.json()) as { status: string };
     assert.equal(body.status, 'ok');
@@ -284,14 +289,36 @@ test('POST /api/guidance maps AI errors and unexpected exceptions without leakin
   }
 });
 
-test('fetchLiveAqiForCity handles success, missing coordinates, HTTP errors, network failures, and disabled state', async () => {
+test('API rate limiter returns 429 with Retry-After header when request cap is exceeded', async () => {
+  await withServer(
+    {
+      lookupAqi: async () => buildUnavailableLiveAqi(),
+      rateLimit: { aqiMax: 2, guidanceMax: 2, windowMs: 30_000 },
+    },
+    async (baseUrl) => {
+      const r1 = await fetch(`${baseUrl}/api/aqi?city=Delhi`);
+      const r2 = await fetch(`${baseUrl}/api/aqi?city=Milan`);
+      const r3 = await fetch(`${baseUrl}/api/aqi?city=Lahore`);
+
+      assert.equal(r1.status, 200);
+      assert.equal(r2.status, 200);
+      assert.equal(r3.status, 429);
+      assert.ok(Number(r3.headers.get('retry-after')) >= 1);
+      const body = (await r3.json()) as { code: string };
+      assert.equal(body.code, 'RATE_LIMITED');
+    },
+  );
+});
+
+test('fetchLiveAqiForCity handles success, caching, concurrent deduplication, errors, and disabled state', async () => {
+  clearAqiCache();
   const disabledResult = await fetchLiveAqiForCity('Delhi', false);
   assert.equal(disabledResult.status, 'disabled');
   assert.equal(disabledResult.usAqi, null);
 
   const originalFetch = globalThis.fetch;
   try {
-    // 1. Success response
+    // 1. Success response + cache hit + concurrent deduplication
     let callCount = 0;
     globalThis.fetch = (async () => {
       callCount += 1;
@@ -325,14 +352,25 @@ test('fetchLiveAqiForCity handles success, missing coordinates, HTTP errors, net
       );
     }) as typeof fetch;
 
-    const okResult = await fetchLiveAqiForCity('Milan', true);
-    assert.equal(okResult.status, 'available');
-    assert.equal(okResult.usAqi, 95);
-    assert.equal(okResult.pm25, 32.1);
-    assert.equal(okResult.pm10, 45.8);
-    assert.equal(okResult.resolvedLocation, 'Milan, Lombardy, Italy');
+    const [first, concurrent] = await Promise.all([
+      fetchLiveAqiForCity('Milan', true),
+      fetchLiveAqiForCity('milan', true),
+    ]);
+    assert.equal(first.status, 'available');
+    assert.equal(first.usAqi, 95);
+    assert.equal(first.pm25, 32.1);
+    assert.equal(first.pm10, 45.8);
+    assert.equal(first.resolvedLocation, 'Milan, Lombardy, Italy');
+    assert.equal(concurrent.usAqi, 95);
+    assert.equal(callCount, 2, 'Concurrent lookups should share 1 geocoding + 1 AQ fetch');
+
+    // Subsequent lookup within TTL hits cache without calling fetch again
+    const cachedHit = await fetchLiveAqiForCity('Milan', true);
+    assert.equal(cachedHit.usAqi, 95);
+    assert.equal(callCount, 2);
 
     // 2. Empty geocoding results
+    clearAqiCache();
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ results: [] }), { status: 200 })) as typeof fetch;
     const notFoundResult = await fetchLiveAqiForCity('Nowhereville', true);
@@ -340,19 +378,39 @@ test('fetchLiveAqiForCity handles success, missing coordinates, HTTP errors, net
     assert.equal(notFoundResult.usAqi, null);
 
     // 3. Provider HTTP 500
+    clearAqiCache();
     globalThis.fetch = (async () =>
       new Response('Server Error', { status: 500 })) as typeof fetch;
     const serverErrResult = await fetchLiveAqiForCity('Milan', true);
     assert.equal(serverErrResult.status, 'unavailable');
 
-    // 4. Network rejection
+    // 4. Network rejection (not cached so retry makes a new request)
+    clearAqiCache();
+    let errorFetchCount = 0;
     globalThis.fetch = (async () => {
+      errorFetchCount += 1;
       throw new Error('Network timeout');
     }) as typeof fetch;
     const networkErrResult = await fetchLiveAqiForCity('Milan', true);
     assert.equal(networkErrResult.status, 'error');
     assert.equal(networkErrResult.usAqi, null);
+    await fetchLiveAqiForCity('Milan', true);
+    assert.equal(errorFetchCount, 2);
   } finally {
+    clearAqiCache();
     globalThis.fetch = originalFetch;
   }
+});
+
+test('buildPromptPayload serializes compact JSON inside XML boundary tags', () => {
+  const prompt = buildPromptPayload(
+    { ...DEFAULT_USER_INPUT, city: 'Salt Lake City', householdContext: 'Kids at home' },
+    buildAvailableLiveAqi(),
+    138,
+    'live',
+  );
+  assert.ok(prompt.includes('<user_profile_data>'));
+  assert.ok(prompt.includes('</user_profile_data>'));
+  assert.ok(prompt.includes('"location":"Salt Lake City"'));
+  assert.equal(prompt.includes('\n  "location"'), false);
 });

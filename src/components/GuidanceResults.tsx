@@ -6,7 +6,7 @@ import {
   Leaf,
   ShieldCheck,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import type {
   AiGuidanceResponse,
   RecommendationItem,
@@ -29,10 +29,68 @@ interface TaggedDailyItem {
   item: RecommendationItem;
 }
 
-export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps) {
+const PERIOD_OPTIONS: ReadonlyArray<readonly [DayPeriodFilter, string]> = [
+  ['all', 'All Periods'],
+  ['morning', 'Morning'],
+  ['midday', 'Midday'],
+  ['evening', 'Evening'],
+];
+
+const PRIORITY_OPTIONS: ReadonlyArray<readonly [PriorityFilter, string]> = [
+  ['all', 'All Priorities'],
+  ['high', 'High'],
+  ['medium', 'Medium'],
+  ['low', 'Low'],
+];
+
+interface FilterGroupProps<T extends string> {
+  ariaLabel: string;
+  options: ReadonlyArray<readonly [T, string]>;
+  activeValue: T;
+  onSelect: (value: T) => void;
+}
+
+function FilterGroup<T extends string>({
+  ariaLabel,
+  options,
+  activeValue,
+  onSelect,
+}: FilterGroupProps<T>) {
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1"
+    >
+      {options.map(([value, label]) => {
+        const active = activeValue === value;
+        return (
+          <button
+            key={value}
+            type="button"
+            onClick={() => onSelect(value)}
+            aria-pressed={active}
+            className={`min-h-[36px] rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+              active
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-700 hover:text-slate-900'
+            }`}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export const GuidanceResults = memo(function GuidanceResults({
+  guidance,
+  conciseMode,
+}: GuidanceResultsProps) {
   const [periodFilter, setPeriodFilter] = useState<DayPeriodFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
-  const [completedMap, setCompletedMap] = useState<Record<string, boolean>>({});
+  const [completedKeys, setCompletedKeys] = useState<Set<string>>(() => new Set());
 
   const allDailyItems = useMemo<TaggedDailyItem[]>(() => {
     return [
@@ -69,16 +127,22 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
     });
   }, [allDailyItems, periodFilter, priorityFilter]);
 
-  const completedCount = useMemo(() => {
-    return allDailyItems.filter((entry) => completedMap[entry.key]).length;
-  }, [allDailyItems, completedMap]);
+  const toggleItemCompleted = useCallback((key: string) => {
+    setCompletedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
 
-  const toggleItemCompleted = (key: string) => {
-    setCompletedMap((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
+  const resetFilters = useCallback(() => {
+    setPeriodFilter('all');
+    setPriorityFilter('all');
+  }, []);
 
   return (
     <div className="space-y-10">
@@ -134,75 +198,24 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
             aria-live="polite"
             className="font-mono text-xs font-medium tabular-nums text-slate-700"
           >
-            Showing {filteredDailyItems.length} of {allDailyItems.length} actions · {completedCount} completed today
+            Showing {filteredDailyItems.length} of {allDailyItems.length} actions · {completedKeys.size} completed today
           </p>
         </div>
 
         {/* Interactive Filter Controls */}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div
-            role="group"
-            aria-label="Filter daily actions by time of day"
-            className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1"
-          >
-            {(
-              [
-                ['all', 'All Periods'],
-                ['morning', 'Morning'],
-                ['midday', 'Midday'],
-                ['evening', 'Evening'],
-              ] as const
-            ).map(([value, label]) => {
-              const active = periodFilter === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setPeriodFilter(value)}
-                  aria-pressed={active}
-                  className={`min-h-[36px] rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-                    active
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-700 hover:text-slate-900'
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div
-            role="group"
-            aria-label="Filter daily actions by priority"
-            className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1"
-          >
-            {(
-              [
-                ['all', 'All Priorities'],
-                ['high', 'High'],
-                ['medium', 'Medium'],
-                ['low', 'Low'],
-              ] as const
-            ).map(([value, label]) => {
-              const active = priorityFilter === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setPriorityFilter(value)}
-                  aria-pressed={active}
-                  className={`min-h-[36px] rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-                    active
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-700 hover:text-slate-900'
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
+          <FilterGroup
+            ariaLabel="Filter daily actions by time of day"
+            options={PERIOD_OPTIONS}
+            activeValue={periodFilter}
+            onSelect={setPeriodFilter}
+          />
+          <FilterGroup
+            ariaLabel="Filter daily actions by priority"
+            options={PRIORITY_OPTIONS}
+            activeValue={priorityFilter}
+            onSelect={setPriorityFilter}
+          />
         </div>
 
         {filteredDailyItems.length === 0 ? (
@@ -212,10 +225,7 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
             </p>
             <button
               type="button"
-              onClick={() => {
-                setPeriodFilter('all');
-                setPriorityFilter('all');
-              }}
+              onClick={resetFilters}
               className="mt-3 inline-flex min-h-[40px] items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
             >
               Show All Daily Actions
@@ -227,11 +237,12 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
               <RecommendationCard
                 key={entry.key}
                 item={entry.item}
+                itemKey={entry.key}
                 categoryLabel={entry.periodLabel}
                 headingLevel="h3"
                 conciseMode={conciseMode}
-                completed={Boolean(completedMap[entry.key])}
-                onToggleCompleted={() => toggleItemCompleted(entry.key)}
+                completed={completedKeys.has(entry.key)}
+                onToggleCompleted={toggleItemCompleted}
               />
             ))}
           </div>
@@ -356,4 +367,4 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
       </section>
     </div>
   );
-}
+});

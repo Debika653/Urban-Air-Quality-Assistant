@@ -132,7 +132,7 @@ CRITICAL SAFETY & ACCURACY RULES:
 5. Medical responsibility: Never diagnose conditions, never make clinical claims, never falsely reassure users during hazardous air, protect vulnerable groups (children, older adults, asthma/cardiac sensitivity), advise seeking professional medical care for concerning symptoms (e.g., wheezing, shortness of breath, chest discomfort), and state clearly that this guidance does not replace professional medical advice.
 6. Output plain, clear, accessible text inside valid JSON matching the schema. Never include HTML tags, markdown links, or code fences.`;
 
-function buildPromptPayload(
+export function buildPromptPayload(
   input: UserProfileInput,
   liveAqi: LiveAqiReading,
   effectiveAqi: number | null,
@@ -168,9 +168,12 @@ function buildPromptPayload(
 Keep recommendations concrete, concise, and grounded in their commute, outdoor habits, indoor equipment, and pollution status.
 
 <user_profile_data>
-${JSON.stringify(structuredContext, null, 2)}
+${JSON.stringify(structuredContext)}
 </user_profile_data>`;
 }
+
+let cachedClient: GoogleGenAI | null = null;
+let cachedApiKey: string | null = null;
 
 function getAiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
@@ -182,7 +185,12 @@ function getAiClient(): GoogleGenAI {
     );
   }
 
-  return new GoogleGenAI({
+  if (cachedClient && cachedApiKey === apiKey) {
+    return cachedClient;
+  }
+
+  cachedApiKey = apiKey;
+  cachedClient = new GoogleGenAI({
     apiKey,
     httpOptions: {
       headers: {
@@ -190,6 +198,7 @@ function getAiClient(): GoogleGenAI {
       },
     },
   });
+  return cachedClient;
 }
 
 function mapGeminiError(err: unknown): GeminiServiceError {

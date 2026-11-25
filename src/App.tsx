@@ -1,5 +1,5 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AirQualityForm } from './components/AirQualityForm.tsx';
 import { DashboardSkeleton } from './components/DashboardSkeleton.tsx';
 import { EmptyGuidanceState } from './components/EmptyGuidanceState.tsx';
@@ -47,10 +47,6 @@ export default function App() {
   const focusTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    savePreferences(preferences);
-  }, [preferences]);
-
-  useEffect(() => {
     return () => {
       guidanceAbortRef.current?.abort();
       aqiAbortRef.current?.abort();
@@ -92,7 +88,7 @@ export default function App() {
   }, [preferences.reduceMotion]);
 
   const handleCheckAqiOnly = useCallback(
-    async (city: string) => {
+    (city: string) => {
       aqiAbortRef.current?.abort();
       const controller = new AbortController();
       aqiAbortRef.current = controller;
@@ -100,37 +96,39 @@ export default function App() {
       setIsCheckingAqi(true);
       setApiError(null);
 
-      try {
-        const outcome = await fetchLiveAqi(
-          city,
-          preferences.useLiveLookup,
-          controller.signal,
-        );
-        if (!outcome.ok) {
-          setApiError(outcome.error);
-          return;
+      void (async () => {
+        try {
+          const outcome = await fetchLiveAqi(
+            city,
+            preferences.useLiveLookup,
+            controller.signal,
+          );
+          if (!outcome.ok) {
+            setApiError(outcome.error);
+            return;
+          }
+          setPreviewLiveAqi(outcome.data);
+          setStatusMessage(
+            outcome.data.status === 'available' && outcome.data.usAqi !== null
+              ? `Checked air quality for ${city}: ${outcome.data.usAqi} US AQI.`
+              : `Checked air quality for ${city}: live reading unavailable.`,
+          );
+        } catch (err) {
+          if (err instanceof Error && err.name === 'AbortError') {
+            return;
+          }
+          setApiError(
+            'Live AQI check could not be completed. You can still enter a manual AQI or generate precautionary guidance.',
+          );
+        } finally {
+          setIsCheckingAqi(false);
         }
-        setPreviewLiveAqi(outcome.data);
-        setStatusMessage(
-          outcome.data.status === 'available' && outcome.data.usAqi !== null
-            ? `Checked air quality for ${city}: ${outcome.data.usAqi} US AQI.`
-            : `Checked air quality for ${city}: live reading unavailable.`,
-        );
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
-          return;
-        }
-        setApiError(
-          'Live AQI check could not be completed. You can still enter a manual AQI or generate precautionary guidance.',
-        );
-      } finally {
-        setIsCheckingAqi(false);
-      }
+      })();
     },
     [preferences.useLiveLookup],
   );
 
-  const submitGuidanceRequest = useCallback(async (input: UserProfileInput) => {
+  const submitGuidanceRequest = useCallback((input: UserProfileInput) => {
     guidanceAbortRef.current?.abort();
     const controller = new AbortController();
     guidanceAbortRef.current = controller;
@@ -140,29 +138,31 @@ export default function App() {
     setServerErrors({});
     setLastSubmittedInput(input);
 
-    try {
-      const outcome = await requestAirQualityGuidance(input, controller.signal);
-      if (!outcome.ok) {
-        if (outcome.fieldErrors) {
-          setServerErrors(outcome.fieldErrors);
+    void (async () => {
+      try {
+        const outcome = await requestAirQualityGuidance(input, controller.signal);
+        if (!outcome.ok) {
+          if (outcome.fieldErrors) {
+            setServerErrors(outcome.fieldErrors);
+          }
+          setApiError(outcome.error);
+          return;
         }
-        setApiError(outcome.error);
-        return;
-      }
 
-      setGuidanceResult(outcome.data);
-      setPreviewLiveAqi(outcome.data.liveAqi);
-      setStatusMessage(`Personalized air-quality guidance generated for ${input.city}.`);
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        return;
+        setGuidanceResult(outcome.data);
+        setPreviewLiveAqi(outcome.data.liveAqi);
+        setStatusMessage(`Personalized air-quality guidance generated for ${input.city}.`);
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
+        }
+        setApiError(
+          'Network error while contacting the guidance service. Your inputs have been preserved; select Retry to try again.',
+        );
+      } finally {
+        setIsSubmitting(false);
       }
-      setApiError(
-        'Network error while contacting the guidance service. Your inputs have been preserved; select Retry to try again.',
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
+    })();
   }, []);
 
   const handleResetAll = useCallback(() => {
@@ -182,9 +182,18 @@ export default function App() {
 
   const handleRetry = useCallback(() => {
     if (lastSubmittedInput) {
-      void submitGuidanceRequest(lastSubmittedInput);
+      submitGuidanceRequest(lastSubmittedInput);
     }
   }, [lastSubmittedInput, submitGuidanceRequest]);
+
+  const handleDismissApiError = useCallback(() => {
+    setApiError(null);
+  }, []);
+
+  const handleChangePreferences = useCallback((next: UserPreferences) => {
+    setPreferences(next);
+    savePreferences(next);
+  }, []);
 
   const handleResetPreferences = useCallback(() => {
     clearPreferences();
@@ -192,10 +201,14 @@ export default function App() {
     setStatusMessage('Accessibility and lookup preferences reset to defaults.');
   }, []);
 
-  const manualAqiCheck = parseManualAqiInput(
-    manualAqiText.trim() === '' ? null : manualAqiText.trim(),
-  );
-  const validManualPreview = manualAqiCheck.valid ? manualAqiCheck.value : null;
+  const validManualPreview = useMemo(() => {
+    const trimmed = manualAqiText.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = parseManualAqiInput(trimmed);
+    return parsed.valid ? parsed.value : null;
+  }, [manualAqiText]);
 
   const activeLiveAqi = guidanceResult?.liveAqi ?? previewLiveAqi;
   const activeEffectiveAqi =
@@ -212,6 +225,8 @@ export default function App() {
       : activeLiveAqi?.status === 'available'
         ? 'live'
         : 'none');
+
+  const statusCity = guidanceResult ? (lastSubmittedInput?.city ?? formValues.city) : formValues.city;
 
   return (
     <ErrorBoundary>
@@ -239,7 +254,8 @@ export default function App() {
 
         <main
           id="main-content"
-          className="mx-auto max-w-7xl space-y-10 px-4 py-8 sm:px-6 lg:px-8"
+          tabIndex={-1}
+          className="mx-auto max-w-7xl space-y-10 px-4 py-8 focus:outline-none sm:px-6 lg:px-8"
         >
           {/* Dashboard Intro & Overview */}
           <section id="overview" aria-labelledby="dashboard-title" className="scroll-mt-20">
@@ -267,15 +283,15 @@ export default function App() {
                   cityInputRef={cityInputRef}
                   onChangeValues={setFormValues}
                   onChangeManualAqiText={setManualAqiText}
-                  onSubmit={(validated) => void submitGuidanceRequest(validated)}
-                  onCheckAqiOnly={(city) => void handleCheckAqiOnly(city)}
+                  onSubmit={submitGuidanceRequest}
+                  onCheckAqiOnly={handleCheckAqiOnly}
                   onReset={handleResetAll}
                 />
               </div>
 
               <div className="xl:col-span-4">
                 <PollutionStatusPanel
-                  city={guidanceResult ? lastSubmittedInput?.city ?? formValues.city : formValues.city}
+                  city={statusCity}
                   manualAqi={validManualPreview}
                   liveAqi={activeLiveAqi}
                   effectiveAqi={activeEffectiveAqi}
@@ -314,7 +330,7 @@ export default function App() {
                 )}
                 <button
                   type="button"
-                  onClick={() => setApiError(null)}
+                  onClick={handleDismissApiError}
                   className="inline-flex min-h-[40px] items-center rounded-lg border border-red-300 bg-white px-3.5 py-2 text-xs font-medium text-red-900 hover:bg-red-100 whitespace-nowrap"
                 >
                   Dismiss
@@ -339,7 +355,7 @@ export default function App() {
           {/* Preferences & Accessibility Settings */}
           <PreferencesPanel
             preferences={preferences}
-            onChangePreferences={setPreferences}
+            onChangePreferences={handleChangePreferences}
             onResetPreferences={handleResetPreferences}
           />
         </main>

@@ -1,3 +1,5 @@
+import { hasOwn, isPlainObject } from '../shared/airQualitySchema.ts';
+
 export interface UserPreferences {
   useLiveLookup: boolean;
   conciseMode: boolean;
@@ -21,18 +23,21 @@ export function loadPreferences(): UserPreferences {
     if (!raw) {
       return DEFAULT_PREFERENCES;
     }
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isPlainObject(parsed)) {
+      return DEFAULT_PREFERENCES;
+    }
     return {
       useLiveLookup:
-        typeof parsed.useLiveLookup === 'boolean'
+        hasOwn(parsed, 'useLiveLookup') && typeof parsed.useLiveLookup === 'boolean'
           ? parsed.useLiveLookup
           : DEFAULT_PREFERENCES.useLiveLookup,
       conciseMode:
-        typeof parsed.conciseMode === 'boolean'
+        hasOwn(parsed, 'conciseMode') && typeof parsed.conciseMode === 'boolean'
           ? parsed.conciseMode
           : DEFAULT_PREFERENCES.conciseMode,
       reduceMotion:
-        typeof parsed.reduceMotion === 'boolean'
+        hasOwn(parsed, 'reduceMotion') && typeof parsed.reduceMotion === 'boolean'
           ? parsed.reduceMotion
           : DEFAULT_PREFERENCES.reduceMotion,
     };

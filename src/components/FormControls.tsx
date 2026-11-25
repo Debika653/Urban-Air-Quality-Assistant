@@ -1,3 +1,101 @@
+import { memo, type ReactNode, type RefObject } from 'react';
+
+interface TextInputFieldProps {
+  id: string;
+  name: string;
+  label: string;
+  labelBadge?: string;
+  required?: boolean;
+  inputRef?: RefObject<HTMLInputElement | null>;
+  type?: 'text';
+  inputMode?: 'text' | 'numeric';
+  maxLength: number;
+  showCounter?: boolean;
+  value: string;
+  placeholder: string;
+  helpText: string;
+  error?: string;
+  monospace?: boolean;
+  actionSlot?: ReactNode;
+  onChange: (value: string) => void;
+}
+
+function TextInputFieldImpl({
+  id,
+  name,
+  label,
+  labelBadge,
+  required = false,
+  inputRef,
+  type = 'text',
+  inputMode,
+  maxLength,
+  showCounter = false,
+  value,
+  placeholder,
+  helpText,
+  error,
+  monospace = false,
+  actionSlot,
+  onChange,
+}: TextInputFieldProps) {
+  const helpId = `${id}-help`;
+  const errorId = `${id}-error`;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <label htmlFor={id} className="text-sm font-medium text-slate-900">
+          {label}{' '}
+          {labelBadge && (
+            <span className={required ? 'text-teal-800' : 'font-normal text-slate-600'}>
+              {labelBadge}
+            </span>
+          )}
+        </label>
+        {showCounter && (
+          <span className="font-mono text-xs tabular-nums text-slate-600">
+            {value.length}/{maxLength}
+          </span>
+        )}
+      </div>
+
+      <div className={actionSlot ? 'mt-1.5 flex gap-2' : 'mt-1.5'}>
+        <input
+          ref={inputRef}
+          id={id}
+          name={name}
+          type={type}
+          inputMode={inputMode}
+          required={required}
+          aria-required={required ? 'true' : undefined}
+          maxLength={maxLength}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${helpId} ${errorId}` : helpId}
+          className={`block min-h-[44px] w-full rounded-lg border px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 ${
+            monospace ? 'font-mono tabular-nums placeholder:font-sans' : ''
+          } ${error ? 'border-red-500 bg-red-50/40' : 'border-slate-300 bg-white'}`}
+        />
+        {actionSlot}
+      </div>
+
+      <p id={helpId} className="mt-1 text-xs text-slate-600">
+        {helpText}
+      </p>
+      {error && (
+        <p id={errorId} className="mt-1 text-xs font-medium text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export const TextInputField = memo(TextInputFieldImpl);
+
 interface SelectFieldProps<T extends string> {
   id: string;
   name: string;
@@ -8,7 +106,7 @@ interface SelectFieldProps<T extends string> {
   onChange: (value: T) => void;
 }
 
-export function SelectField<T extends string>({
+function SelectFieldImpl<T extends string>({
   id,
   name,
   label,
@@ -39,6 +137,8 @@ export function SelectField<T extends string>({
   );
 }
 
+export const SelectField = memo(SelectFieldImpl) as typeof SelectFieldImpl;
+
 interface ChecklistFieldsetProps<T extends string> {
   legend: string;
   options: readonly T[];
@@ -48,7 +148,7 @@ interface ChecklistFieldsetProps<T extends string> {
   onToggle: (option: T) => void;
 }
 
-export function ChecklistFieldset<T extends string>({
+function ChecklistFieldsetImpl<T extends string>({
   legend,
   options,
   labels,
@@ -87,3 +187,5 @@ export function ChecklistFieldset<T extends string>({
     </fieldset>
   );
 }
+
+export const ChecklistFieldset = memo(ChecklistFieldsetImpl) as typeof ChecklistFieldsetImpl;

@@ -191,6 +191,14 @@ export const DEFAULT_USER_INPUT: UserProfileInput = {
   useLiveLookup: true,
 };
 
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function hasOwn(obj: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
 /**
  * Strips control characters, invisible bidi/zero-width spoofing characters,
  * HTML/XML angle brackets, and normalizes whitespace.
@@ -268,147 +276,154 @@ export function parseManualAqiInput(raw: unknown): {
   return { valid: true, value: numeric };
 }
 
+const VALID_AQI_STATUSES = ['available', 'unavailable', 'disabled', 'error'] as const;
+
 export function validateLiveAqiReading(raw: unknown): LiveAqiReading | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+  if (!isPlainObject(raw)) {
     return null;
   }
-  const obj = raw as Record<string, unknown>;
-  const validStatuses = ['available', 'unavailable', 'disabled', 'error'] as const;
+  const status = hasOwn(raw, 'status') ? raw.status : undefined;
   if (
-    typeof obj.status !== 'string' ||
-    !(validStatuses as readonly string[]).includes(obj.status)
+    typeof status !== 'string' ||
+    !(VALID_AQI_STATUSES as readonly string[]).includes(status)
   ) {
     return null;
   }
   const usAqi =
-    typeof obj.usAqi === 'number' && Number.isFinite(obj.usAqi)
-      ? Math.max(MIN_AQI, Math.min(MAX_AQI, Math.round(obj.usAqi)))
+    typeof raw.usAqi === 'number' && Number.isFinite(raw.usAqi)
+      ? Math.max(MIN_AQI, Math.min(MAX_AQI, Math.round(raw.usAqi)))
       : null;
   const pm25 =
-    typeof obj.pm25 === 'number' && Number.isFinite(obj.pm25) ? obj.pm25 : null;
+    typeof raw.pm25 === 'number' && Number.isFinite(raw.pm25) ? raw.pm25 : null;
   const pm10 =
-    typeof obj.pm10 === 'number' && Number.isFinite(obj.pm10) ? obj.pm10 : null;
+    typeof raw.pm10 === 'number' && Number.isFinite(raw.pm10) ? raw.pm10 : null;
 
   return {
-    status: obj.status as LiveAqiReading['status'],
-    source: typeof obj.source === 'string' ? sanitizeText(obj.source, 120) : null,
+    status: status as LiveAqiReading['status'],
+    source: typeof raw.source === 'string' ? sanitizeText(raw.source, 120) : null,
     resolvedLocation:
-      typeof obj.resolvedLocation === 'string'
-        ? sanitizeText(obj.resolvedLocation, 140)
+      typeof raw.resolvedLocation === 'string'
+        ? sanitizeText(raw.resolvedLocation, 140)
         : null,
     usAqi,
     pm25,
     pm10,
     observedAt:
-      typeof obj.observedAt === 'string' ? sanitizeText(obj.observedAt, 60) : null,
+      typeof raw.observedAt === 'string' ? sanitizeText(raw.observedAt, 60) : null,
     unitLabel:
-      typeof obj.unitLabel === 'string' ? sanitizeText(obj.unitLabel, 60) : null,
-    note: sanitizeText(obj.note, 320),
+      typeof raw.unitLabel === 'string' ? sanitizeText(raw.unitLabel, 60) : null,
+    note: sanitizeText(raw.note, 320),
   };
+}
+
+function validateEnumValue<T extends string>(
+  rawValue: unknown,
+  allowed: readonly T[],
+): T | null {
+  return typeof rawValue === 'string' && (allowed as readonly string[]).includes(rawValue)
+    ? (rawValue as T)
+    : null;
+}
+
+function validateEnumArray<T extends string>(
+  rawValue: unknown,
+  allowed: readonly T[],
+): T[] {
+  if (!Array.isArray(rawValue)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      rawValue.filter(
+        (item): item is T =>
+          typeof item === 'string' && (allowed as readonly string[]).includes(item),
+      ),
+    ),
+  );
 }
 
 export function validateUserProfileInput(raw: unknown): InputValidationResult {
   const errors: ValidationErrors = {};
 
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+  if (!isPlainObject(raw)) {
     return {
       valid: false,
       errors: { general: 'Request payload must be a valid object.' },
     };
   }
 
-  const record = raw as Record<string, unknown>;
-
-  const cityCheck = validateCityName(record.city);
+  const cityCheck = validateCityName(hasOwn(raw, 'city') ? raw.city : undefined);
   if (!cityCheck.valid) {
     errors.city = cityCheck.error;
   }
 
-  const aqiCheck = parseManualAqiInput(record.manualAqi);
+  const aqiCheck = parseManualAqiInput(hasOwn(raw, 'manualAqi') ? raw.manualAqi : undefined);
   if (!aqiCheck.valid) {
     errors.manualAqi = aqiCheck.error;
   }
-  const parsedAqi = aqiCheck.value;
 
-  // Commute method
-  const commuteMethod = record.commuteMethod;
-  if (
-    typeof commuteMethod !== 'string' ||
-    !(COMMUTE_METHODS as readonly string[]).includes(commuteMethod)
-  ) {
+  const commuteMethod = validateEnumValue(
+    hasOwn(raw, 'commuteMethod') ? raw.commuteMethod : undefined,
+    COMMUTE_METHODS,
+  );
+  if (!commuteMethod) {
     errors.commuteMethod = 'Please select a valid commute method.';
   }
 
-  // Outdoor habits
-  const outdoorHabits = record.outdoorHabits;
-  if (
-    typeof outdoorHabits !== 'string' ||
-    !(OUTDOOR_HABITS as readonly string[]).includes(outdoorHabits)
-  ) {
+  const outdoorHabits = validateEnumValue(
+    hasOwn(raw, 'outdoorHabits') ? raw.outdoorHabits : undefined,
+    OUTDOOR_HABITS,
+  );
+  if (!outdoorHabits) {
     errors.outdoorHabits = 'Please select an outdoor activity pattern.';
   }
 
-  // Main concern
-  const mainConcern = record.mainConcern;
-  if (
-    typeof mainConcern !== 'string' ||
-    !(MAIN_CONCERNS as readonly string[]).includes(mainConcern)
-  ) {
+  const mainConcern = validateEnumValue(
+    hasOwn(raw, 'mainConcern') ? raw.mainConcern : undefined,
+    MAIN_CONCERNS,
+  );
+  if (!mainConcern) {
     errors.mainConcern = 'Please select a primary concern.';
   }
 
-  // Season mode
-  const seasonMode = record.seasonMode ?? 'severe_winter_smog';
-  if (
-    typeof seasonMode !== 'string' ||
-    !(SEASON_MODES as readonly string[]).includes(seasonMode)
-  ) {
+  const rawSeason = hasOwn(raw, 'seasonMode') ? raw.seasonMode : 'severe_winter_smog';
+  const seasonMode = validateEnumValue(rawSeason ?? 'severe_winter_smog', SEASON_MODES);
+  if (!seasonMode) {
     errors.seasonMode = 'Please select an air-quality context mode.';
   }
 
-  // Household context (optional)
   let cleanHousehold = '';
-  if (record.householdContext !== undefined && record.householdContext !== null) {
-    if (typeof record.householdContext !== 'string') {
+  const rawHousehold = hasOwn(raw, 'householdContext') ? raw.householdContext : undefined;
+  if (rawHousehold !== undefined && rawHousehold !== null) {
+    if (typeof rawHousehold !== 'string') {
       errors.householdContext = 'Household notes must be plain text.';
-    } else if (record.householdContext.trim().length > MAX_HOUSEHOLD_LENGTH) {
+    } else if (rawHousehold.trim().length > MAX_HOUSEHOLD_LENGTH) {
       errors.householdContext = `Household notes must be ${MAX_HOUSEHOLD_LENGTH} characters or fewer.`;
     } else {
-      cleanHousehold = sanitizeText(record.householdContext, MAX_HOUSEHOLD_LENGTH);
+      cleanHousehold = sanitizeText(rawHousehold, MAX_HOUSEHOLD_LENGTH);
     }
   }
 
-  // Optional arrays
-  const indoorResources: IndoorResource[] = Array.isArray(record.indoorResources)
-    ? Array.from(
-        new Set(
-          record.indoorResources.filter(
-            (item): item is IndoorResource =>
-              typeof item === 'string' &&
-              (INDOOR_RESOURCES as readonly string[]).includes(item),
-          ),
-        ),
-      )
-    : [];
-
-  const sustainabilityGoals: SustainabilityGoal[] = Array.isArray(
-    record.sustainabilityGoals,
-  )
-    ? Array.from(
-        new Set(
-          record.sustainabilityGoals.filter(
-            (item): item is SustainabilityGoal =>
-              typeof item === 'string' &&
-              (SUSTAINABILITY_GOALS as readonly string[]).includes(item),
-          ),
-        ),
-      )
-    : [];
-
+  const indoorResources = validateEnumArray(
+    hasOwn(raw, 'indoorResources') ? raw.indoorResources : undefined,
+    INDOOR_RESOURCES,
+  );
+  const sustainabilityGoals = validateEnumArray(
+    hasOwn(raw, 'sustainabilityGoals') ? raw.sustainabilityGoals : undefined,
+    SUSTAINABILITY_GOALS,
+  );
   const useLiveLookup =
-    typeof record.useLiveLookup === 'boolean' ? record.useLiveLookup : true;
+    hasOwn(raw, 'useLiveLookup') && typeof raw.useLiveLookup === 'boolean'
+      ? raw.useLiveLookup
+      : true;
 
-  if (Object.keys(errors).length > 0) {
+  if (
+    Object.keys(errors).length > 0 ||
+    !commuteMethod ||
+    !outdoorHabits ||
+    !mainConcern ||
+    !seasonMode
+  ) {
     return { valid: false, errors };
   }
 
@@ -416,37 +431,36 @@ export function validateUserProfileInput(raw: unknown): InputValidationResult {
     valid: true,
     errors: {},
     sanitized: {
-      city: sanitizeText(record.city, MAX_CITY_LENGTH),
-      manualAqi: parsedAqi,
-      commuteMethod: commuteMethod as CommuteMethod,
+      city: cityCheck.city,
+      manualAqi: aqiCheck.value,
+      commuteMethod,
       householdContext: cleanHousehold,
-      outdoorHabits: outdoorHabits as OutdoorHabit,
-      mainConcern: mainConcern as MainConcern,
+      outdoorHabits,
+      mainConcern,
       indoorResources,
       sustainabilityGoals,
-      seasonMode: seasonMode as SeasonMode,
+      seasonMode,
       useLiveLookup,
     },
   };
 }
 
 function validateRecommendationItem(raw: unknown): RecommendationItem | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+  if (!isPlainObject(raw)) {
     return null;
   }
-  const obj = raw as Record<string, unknown>;
-  const title = sanitizeText(obj.title, 120);
-  const action = sanitizeText(obj.action, 360);
-  const reason = sanitizeText(obj.reason, 420);
-  const impact = sanitizeText(obj.impact, 360);
-  const practicality = sanitizeText(obj.practicality, 140) || 'Practical daily step';
-  const limitation = sanitizeText(obj.limitation, 280);
+  const title = sanitizeText(raw.title, 120);
+  const action = sanitizeText(raw.action, 360);
+  const reason = sanitizeText(raw.reason, 420);
+  const impact = sanitizeText(raw.impact, 360);
+  const practicality = sanitizeText(raw.practicality, 140) || 'Practical daily step';
+  const limitation = sanitizeText(raw.limitation, 280);
 
   if (!title || !action || !reason || !impact) {
     return null;
   }
 
-  const rawPriority = typeof obj.priority === 'string' ? obj.priority.toLowerCase().trim() : 'medium';
+  const rawPriority = typeof raw.priority === 'string' ? raw.priority.toLowerCase().trim() : 'medium';
   const priority: RecommendationPriority =
     rawPriority === 'high' || rawPriority === 'medium' || rawPriority === 'low'
       ? rawPriority
@@ -500,21 +514,20 @@ export interface AiValidationResult {
 }
 
 export function validateAiGuidanceResponse(raw: unknown): AiValidationResult {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+  if (!isPlainObject(raw)) {
     return { valid: false, error: 'AI response was not a structured JSON object.' };
   }
 
-  const obj = raw as Record<string, unknown>;
-  const summary = sanitizeText(obj.summary, 600);
-  const pollution_context = sanitizeText(obj.pollution_context, 700);
-  const morning_actions = validateRecommendationArray(obj.morning_actions);
-  const midday_actions = validateRecommendationArray(obj.midday_actions);
-  const evening_actions = validateRecommendationArray(obj.evening_actions);
-  const indoor_air_quality = validateRecommendationArray(obj.indoor_air_quality);
-  const sustainable_alternatives = validateRecommendationArray(obj.sustainable_alternatives);
-  const environmental_impact = validateRecommendationArray(obj.environmental_impact);
-  const safety_notes = validateStringArray(obj.safety_notes);
-  const data_limitations = validateStringArray(obj.data_limitations);
+  const summary = sanitizeText(raw.summary, 600);
+  const pollution_context = sanitizeText(raw.pollution_context, 700);
+  const morning_actions = validateRecommendationArray(raw.morning_actions);
+  const midday_actions = validateRecommendationArray(raw.midday_actions);
+  const evening_actions = validateRecommendationArray(raw.evening_actions);
+  const indoor_air_quality = validateRecommendationArray(raw.indoor_air_quality);
+  const sustainable_alternatives = validateRecommendationArray(raw.sustainable_alternatives);
+  const environmental_impact = validateRecommendationArray(raw.environmental_impact);
+  const safety_notes = validateStringArray(raw.safety_notes);
+  const data_limitations = validateStringArray(raw.data_limitations);
 
   if (
     !summary ||

@@ -1,4 +1,5 @@
 import { RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { memo, useCallback } from 'react';
 import type { UserPreferences } from '../utils/preferences.ts';
 
 interface PreferencesPanelProps {
@@ -7,11 +8,32 @@ interface PreferencesPanelProps {
   onResetPreferences: () => void;
 }
 
-export function PreferencesPanel({
+export const PreferencesPanel = memo(function PreferencesPanel({
   preferences,
   onChangePreferences,
   onResetPreferences,
 }: PreferencesPanelProps) {
+  const toggleLiveLookup = useCallback(() => {
+    onChangePreferences({
+      ...preferences,
+      useLiveLookup: !preferences.useLiveLookup,
+    });
+  }, [onChangePreferences, preferences]);
+
+  const toggleConciseMode = useCallback(() => {
+    onChangePreferences({
+      ...preferences,
+      conciseMode: !preferences.conciseMode,
+    });
+  }, [onChangePreferences, preferences]);
+
+  const toggleReduceMotion = useCallback(() => {
+    onChangePreferences({
+      ...preferences,
+      reduceMotion: !preferences.reduceMotion,
+    });
+  }, [onChangePreferences, preferences]);
+
   return (
     <section
       id="safety-settings"
@@ -58,12 +80,7 @@ export function PreferencesPanel({
             aria-checked={preferences.useLiveLookup}
             aria-labelledby="pref-live-aqi-label"
             aria-describedby="pref-live-aqi-desc"
-            onClick={() =>
-              onChangePreferences({
-                ...preferences,
-                useLiveLookup: !preferences.useLiveLookup,
-              })
-            }
+            onClick={toggleLiveLookup}
             className={`inline-flex min-h-[40px] min-w-[96px] shrink-0 items-center justify-center rounded-lg border px-3.5 py-2 text-xs font-semibold transition-colors ${
               preferences.useLiveLookup
                 ? 'border-teal-700 bg-teal-700 text-white'
@@ -90,12 +107,7 @@ export function PreferencesPanel({
             aria-checked={preferences.conciseMode}
             aria-labelledby="pref-concise-label"
             aria-describedby="pref-concise-desc"
-            onClick={() =>
-              onChangePreferences({
-                ...preferences,
-                conciseMode: !preferences.conciseMode,
-              })
-            }
+            onClick={toggleConciseMode}
             className={`inline-flex min-h-[40px] min-w-[96px] shrink-0 items-center justify-center rounded-lg border px-3.5 py-2 text-xs font-semibold transition-colors ${
               preferences.conciseMode
                 ? 'border-teal-700 bg-teal-700 text-white'
@@ -122,12 +134,7 @@ export function PreferencesPanel({
             aria-checked={preferences.reduceMotion}
             aria-labelledby="pref-motion-label"
             aria-describedby="pref-motion-desc"
-            onClick={() =>
-              onChangePreferences({
-                ...preferences,
-                reduceMotion: !preferences.reduceMotion,
-              })
-            }
+            onClick={toggleReduceMotion}
             className={`inline-flex min-h-[40px] min-w-[96px] shrink-0 items-center justify-center rounded-lg border px-3.5 py-2 text-xs font-semibold transition-colors ${
               preferences.reduceMotion
                 ? 'border-teal-700 bg-teal-700 text-white'
@@ -140,4 +147,4 @@ export function PreferencesPanel({
       </div>
     </section>
   );
-}
+});

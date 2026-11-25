@@ -18,6 +18,11 @@ export interface ServerDependencies {
     effectiveAqi: number | null,
     aqiSourceType: 'live' | 'manual' | 'none',
   ) => Promise<AiGuidanceResponse>;
+  rateLimit?: {
+    guidanceMax?: number;
+    aqiMax?: number;
+    windowMs?: number;
+  };
 }
 
 const DEFAULT_DEPS: ServerDependencies = {
@@ -43,7 +48,7 @@ function createRateLimiter(maxRequests: number, windowMs: number) {
       }
     }
 
-    const key = req.ip || 'unknown';
+    const key = req.ip || req.socket.remoteAddress || 'unknown';
     const existing = buckets.get(key);
 
     if (!existing || existing.resetAt <= now) {
@@ -53,6 +58,8 @@ function createRateLimiter(maxRequests: number, windowMs: number) {
     }
 
     if (existing.count >= maxRequests) {
+      const retryAfterSec = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
+      res.setHeader('Retry-After', String(retryAfterSec));
       res.status(429).json({
         error: 'Too many requests. Please wait a moment before generating another plan.',
         code: 'RATE_LIMITED',
@@ -80,6 +87,11 @@ export function createApiApp(customDeps?: Partial<ServerDependencies>) {
     next();
   });
 
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+
   app.use(express.json({ limit: '16kb' }));
 
   // Handle malformed JSON bodies safely without exposing stack traces
@@ -104,8 +116,9 @@ export function createApiApp(customDeps?: Partial<ServerDependencies>) {
     next(err);
   });
 
-  const guidanceLimiter = createRateLimiter(20, 60_000);
-  const aqiLimiter = createRateLimiter(40, 60_000);
+  const windowMs = deps.rateLimit?.windowMs ?? 60_000;
+  const guidanceLimiter = createRateLimiter(deps.rateLimit?.guidanceMax ?? 20, windowMs);
+  const aqiLimiter = createRateLimiter(deps.rateLimit?.aqiMax ?? 40, windowMs);
 
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' });

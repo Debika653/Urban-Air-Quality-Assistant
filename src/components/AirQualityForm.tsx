@@ -1,5 +1,16 @@
 import { Loader2, RotateCcw, Search } from 'lucide-react';
-import { type FormEvent, type RefObject, useState } from 'react';
+import {
+  type Dispatch,
+  memo,
+  type FormEvent,
+  type RefObject,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   COMMUTE_METHODS,
   COMMUTE_METHOD_LABELS,
@@ -17,13 +28,17 @@ import {
   SUSTAINABILITY_GOAL_LABELS,
   validateCityName,
   validateUserProfileInput,
+  type CommuteMethod,
   type IndoorResource,
+  type MainConcern,
+  type OutdoorHabit,
+  type SeasonMode,
   type SustainabilityGoal,
   type UserProfileInput,
   type ValidationErrors,
 } from '../shared/airQualitySchema.ts';
 import { SCENARIO_PRESETS } from '../utils/presets.ts';
-import { ChecklistFieldset, SelectField } from './FormControls.tsx';
+import { ChecklistFieldset, SelectField, TextInputField } from './FormControls.tsx';
 
 interface AirQualityFormProps {
   formValues: UserProfileInput;
@@ -33,14 +48,24 @@ interface AirQualityFormProps {
   isCheckingAqi: boolean;
   useLiveLookup: boolean;
   cityInputRef: RefObject<HTMLInputElement | null>;
-  onChangeValues: (next: UserProfileInput) => void;
+  onChangeValues: Dispatch<SetStateAction<UserProfileInput>>;
   onChangeManualAqiText: (text: string) => void;
   onSubmit: (validatedInput: UserProfileInput) => void;
   onCheckAqiOnly: (city: string) => void;
   onReset: () => void;
 }
 
-export function AirQualityForm({
+const FIELD_INPUT_IDS: Partial<Record<keyof ValidationErrors, string>> = {
+  city: 'city-input',
+  manualAqi: 'manual-aqi-input',
+  seasonMode: 'season-mode-select',
+  commuteMethod: 'commute-select',
+  outdoorHabits: 'outdoor-habits-select',
+  mainConcern: 'main-concern-select',
+  householdContext: 'household-context-input',
+};
+
+export const AirQualityForm = memo(function AirQualityForm({
   formValues,
   manualAqiText,
   serverErrors,
@@ -56,31 +81,111 @@ export function AirQualityForm({
 }: AirQualityFormProps) {
   const [clientErrors, setClientErrors] = useState<ValidationErrors>({});
   const [presetNotice, setPresetNotice] = useState<string>('');
+  const errorSummaryRef = useRef<HTMLDivElement | null>(null);
+  const shouldFocusErrorsRef = useRef(false);
 
-  const errors: ValidationErrors = { ...clientErrors, ...serverErrors };
-  const errorEntries = Object.entries(errors).filter(([, msg]) => Boolean(msg));
+  const errors: ValidationErrors = useMemo(
+    () => ({ ...clientErrors, ...serverErrors }),
+    [clientErrors, serverErrors],
+  );
+  const errorEntries = useMemo(
+    () =>
+      (Object.entries(errors) as Array<[keyof ValidationErrors, string | undefined]>).filter(
+        (entry): entry is [keyof ValidationErrors, string] => Boolean(entry[1]),
+      ),
+    [errors],
+  );
 
-  const toggleIndoorResource = (resource: IndoorResource) => {
-    const exists = formValues.indoorResources.includes(resource);
-    let next: IndoorResource[];
-    if (resource === 'none') {
-      next = exists ? [] : ['none'];
-    } else {
-      const withoutNone = formValues.indoorResources.filter((r) => r !== 'none');
-      next = exists
-        ? withoutNone.filter((r) => r !== resource)
-        : [...withoutNone, resource];
+  useEffect(() => {
+    if (Object.keys(serverErrors).length > 0 && errorSummaryRef.current) {
+      errorSummaryRef.current.focus();
     }
-    onChangeValues({ ...formValues, indoorResources: next });
-  };
+  }, [serverErrors]);
 
-  const toggleSustainabilityGoal = (goal: SustainabilityGoal) => {
-    const exists = formValues.sustainabilityGoals.includes(goal);
-    const next = exists
-      ? formValues.sustainabilityGoals.filter((g) => g !== goal)
-      : [...formValues.sustainabilityGoals, goal];
-    onChangeValues({ ...formValues, sustainabilityGoals: next });
-  };
+  useEffect(() => {
+    if (shouldFocusErrorsRef.current && errorEntries.length > 0 && errorSummaryRef.current) {
+      errorSummaryRef.current.focus();
+      shouldFocusErrorsRef.current = false;
+    }
+  }, [errorEntries]);
+
+  const handleCityChange = useCallback(
+    (city: string) => {
+      onChangeValues((prev) => ({ ...prev, city }));
+      setClientErrors((prev) => (prev.city ? { ...prev, city: undefined } : prev));
+    },
+    [onChangeValues],
+  );
+
+  const handleManualAqiChange = useCallback(
+    (text: string) => {
+      onChangeManualAqiText(text);
+      setClientErrors((prev) => (prev.manualAqi ? { ...prev, manualAqi: undefined } : prev));
+    },
+    [onChangeManualAqiText],
+  );
+
+  const handleHouseholdChange = useCallback(
+    (householdContext: string) => {
+      onChangeValues((prev) => ({ ...prev, householdContext }));
+      setClientErrors((prev) =>
+        prev.householdContext ? { ...prev, householdContext: undefined } : prev,
+      );
+    },
+    [onChangeValues],
+  );
+
+  const handleSeasonChange = useCallback(
+    (seasonMode: SeasonMode) => onChangeValues((prev) => ({ ...prev, seasonMode })),
+    [onChangeValues],
+  );
+
+  const handleCommuteChange = useCallback(
+    (commuteMethod: CommuteMethod) => onChangeValues((prev) => ({ ...prev, commuteMethod })),
+    [onChangeValues],
+  );
+
+  const handleOutdoorChange = useCallback(
+    (outdoorHabits: OutdoorHabit) => onChangeValues((prev) => ({ ...prev, outdoorHabits })),
+    [onChangeValues],
+  );
+
+  const handleConcernChange = useCallback(
+    (mainConcern: MainConcern) => onChangeValues((prev) => ({ ...prev, mainConcern })),
+    [onChangeValues],
+  );
+
+  const toggleIndoorResource = useCallback(
+    (resource: IndoorResource) => {
+      onChangeValues((prev) => {
+        const exists = prev.indoorResources.includes(resource);
+        let next: IndoorResource[];
+        if (resource === 'none') {
+          next = exists ? [] : ['none'];
+        } else {
+          const withoutNone = prev.indoorResources.filter((r) => r !== 'none');
+          next = exists
+            ? withoutNone.filter((r) => r !== resource)
+            : [...withoutNone, resource];
+        }
+        return { ...prev, indoorResources: next };
+      });
+    },
+    [onChangeValues],
+  );
+
+  const toggleSustainabilityGoal = useCallback(
+    (goal: SustainabilityGoal) => {
+      onChangeValues((prev) => {
+        const exists = prev.sustainabilityGoals.includes(goal);
+        const next = exists
+          ? prev.sustainabilityGoals.filter((g) => g !== goal)
+          : [...prev.sustainabilityGoals, goal];
+        return { ...prev, sustainabilityGoals: next };
+      });
+    },
+    [onChangeValues],
+  );
 
   const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -94,10 +199,12 @@ export function AirQualityForm({
 
     const result = validateUserProfileInput(payloadToValidate);
     if (!result.valid || !result.sanitized) {
+      shouldFocusErrorsRef.current = true;
       setClientErrors(result.errors);
       return;
     }
 
+    shouldFocusErrorsRef.current = false;
     setClientErrors({});
     onSubmit(result.sanitized);
   };
@@ -105,6 +212,7 @@ export function AirQualityForm({
   const handleCityAqiCheck = () => {
     const cityCheck = validateCityName(formValues.city);
     if (!cityCheck.valid) {
+      shouldFocusErrorsRef.current = true;
       setClientErrors((prev) => ({
         ...prev,
         city: cityCheck.error || 'Enter a valid city or location name to check AQI.',
@@ -120,6 +228,7 @@ export function AirQualityForm({
     if (!found) {
       return;
     }
+    shouldFocusErrorsRef.current = false;
     setClientErrors({});
     onChangeValues({ ...found.input, useLiveLookup });
     onChangeManualAqiText(found.input.manualAqi !== null ? String(found.input.manualAqi) : '');
@@ -129,6 +238,7 @@ export function AirQualityForm({
   };
 
   const handleResetClick = () => {
+    shouldFocusErrorsRef.current = false;
     setClientErrors({});
     setPresetNotice('');
     onReset();
@@ -176,55 +286,53 @@ export function AirQualityForm({
       {/* Validation Error Summary */}
       {errorEntries.length > 0 && (
         <div
+          ref={errorSummaryRef}
+          tabIndex={-1}
           role="alert"
           aria-live="assertive"
-          className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900"
+          className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900 focus:outline-none"
         >
           <p className="font-semibold">Please fix the following before submitting:</p>
           <ul className="mt-1.5 list-disc space-y-1 pl-5">
-            {errorEntries.map(([field, message]) => (
-              <li key={field}>{message}</li>
-            ))}
+            {errorEntries.map(([field, message]) => {
+              const targetId = FIELD_INPUT_IDS[field];
+              return (
+                <li key={field}>
+                  {targetId ? (
+                    <a
+                      href={`#${targetId}`}
+                      className="underline decoration-red-700/60 underline-offset-2 hover:text-red-950"
+                    >
+                      {message}
+                    </a>
+                  ) : (
+                    message
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
 
       <form onSubmit={handleFormSubmit} noValidate className="mt-5 space-y-5">
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          {/* City / Location */}
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <label htmlFor="city-input" className="text-sm font-medium text-slate-900">
-                City or location <span className="text-teal-800">(Required)</span>
-              </label>
-              <span className="font-mono text-xs tabular-nums text-slate-600">
-                {formValues.city.length}/{MAX_CITY_LENGTH}
-              </span>
-            </div>
-            <div className="mt-1.5 flex gap-2">
-              <input
-                ref={cityInputRef}
-                id="city-input"
-                name="city"
-                type="text"
-                required
-                aria-required="true"
-                maxLength={MAX_CITY_LENGTH}
-                value={formValues.city}
-                onChange={(e) => {
-                  onChangeValues({ ...formValues, city: e.target.value });
-                  if (clientErrors.city) {
-                    setClientErrors((prev) => ({ ...prev, city: undefined }));
-                  }
-                }}
-                placeholder="e.g., Delhi, Salt Lake City, Milan"
-                aria-invalid={Boolean(errors.city)}
-                aria-describedby={errors.city ? 'city-help city-error' : 'city-help'}
-                className={`block min-h-[44px] w-full rounded-lg border px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 ${
-                  errors.city ? 'border-red-500 bg-red-50/40' : 'border-slate-300 bg-white'
-                }`}
-              />
-              {useLiveLookup && (
+          <TextInputField
+            id="city-input"
+            name="city"
+            label="City or location"
+            labelBadge="(Required)"
+            required
+            inputRef={cityInputRef}
+            maxLength={MAX_CITY_LENGTH}
+            showCounter
+            value={formValues.city}
+            placeholder="e.g., Delhi, Salt Lake City, Milan"
+            helpText="Used to contextualize regional air quality and seasonal inversion guidance."
+            error={errors.city}
+            onChange={handleCityChange}
+            actionSlot={
+              useLiveLookup ? (
                 <button
                   type="button"
                   onClick={handleCityAqiCheck}
@@ -238,54 +346,24 @@ export function AirQualityForm({
                   )}
                   <span>Check AQI</span>
                 </button>
-              )}
-            </div>
-            <p id="city-help" className="mt-1 text-xs text-slate-600">
-              Used to contextualize regional air quality and seasonal inversion guidance.
-            </p>
-            {errors.city && (
-              <p id="city-error" className="mt-1 text-xs font-medium text-red-700">
-                {errors.city}
-              </p>
-            )}
-          </div>
+              ) : undefined
+            }
+          />
 
-          {/* Manual AQI Input */}
-          <div>
-            <label htmlFor="manual-aqi-input" className="block text-sm font-medium text-slate-900">
-              Manual US AQI reading <span className="font-normal text-slate-600">(Optional)</span>
-            </label>
-            <input
-              id="manual-aqi-input"
-              name="manualAqi"
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              value={manualAqiText}
-              onChange={(e) => {
-                onChangeManualAqiText(e.target.value);
-                if (clientErrors.manualAqi) {
-                  setClientErrors((prev) => ({ ...prev, manualAqi: undefined }));
-                }
-              }}
-              placeholder="0–500 (leave blank if unknown)"
-              aria-invalid={Boolean(errors.manualAqi)}
-              aria-describedby={
-                errors.manualAqi ? 'manual-aqi-help manual-aqi-error' : 'manual-aqi-help'
-              }
-              className={`mt-1.5 block min-h-[44px] w-full rounded-lg border px-3 py-2 font-mono text-sm tabular-nums text-slate-900 placeholder:font-sans placeholder:text-slate-400 ${
-                errors.manualAqi ? 'border-red-500 bg-red-50/40' : 'border-slate-300 bg-white'
-              }`}
-            />
-            <p id="manual-aqi-help" className="mt-1 text-xs text-slate-600">
-              If you have a local neighborhood monitor or official station reading (0–500), enter it here to override modeled grid estimates.
-            </p>
-            {errors.manualAqi && (
-              <p id="manual-aqi-error" className="mt-1 text-xs font-medium text-red-700">
-                {errors.manualAqi}
-              </p>
-            )}
-          </div>
+          <TextInputField
+            id="manual-aqi-input"
+            name="manualAqi"
+            label="Manual US AQI reading"
+            labelBadge="(Optional)"
+            inputMode="numeric"
+            maxLength={6}
+            monospace
+            value={manualAqiText}
+            placeholder="0–500 (leave blank if unknown)"
+            helpText="If you have a local neighborhood monitor or official station reading (0–500), enter it here to override modeled grid estimates."
+            error={errors.manualAqi}
+            onChange={handleManualAqiChange}
+          />
 
           <SelectField
             id="season-mode-select"
@@ -294,7 +372,7 @@ export function AirQualityForm({
             value={formValues.seasonMode}
             options={SEASON_MODES}
             labels={SEASON_MODE_LABELS}
-            onChange={(seasonMode) => onChangeValues({ ...formValues, seasonMode })}
+            onChange={handleSeasonChange}
           />
 
           <SelectField
@@ -304,7 +382,7 @@ export function AirQualityForm({
             value={formValues.commuteMethod}
             options={COMMUTE_METHODS}
             labels={COMMUTE_METHOD_LABELS}
-            onChange={(commuteMethod) => onChangeValues({ ...formValues, commuteMethod })}
+            onChange={handleCommuteChange}
           />
 
           <SelectField
@@ -314,7 +392,7 @@ export function AirQualityForm({
             value={formValues.outdoorHabits}
             options={OUTDOOR_HABITS}
             labels={OUTDOOR_HABIT_LABELS}
-            onChange={(outdoorHabits) => onChangeValues({ ...formValues, outdoorHabits })}
+            onChange={handleOutdoorChange}
           />
 
           <SelectField
@@ -324,50 +402,23 @@ export function AirQualityForm({
             value={formValues.mainConcern}
             options={MAIN_CONCERNS}
             labels={MAIN_CONCERN_LABELS}
-            onChange={(mainConcern) => onChangeValues({ ...formValues, mainConcern })}
+            onChange={handleConcernChange}
           />
         </div>
 
-        {/* Household Context (Optional) */}
-        <div>
-          <div className="flex items-center justify-between gap-2">
-            <label htmlFor="household-context-input" className="text-sm font-medium text-slate-900">
-              Household or lifestyle notes <span className="font-normal text-slate-600">(Optional)</span>
-            </label>
-            <span className="font-mono text-xs tabular-nums text-slate-600">
-              {formValues.householdContext.length}/{MAX_HOUSEHOLD_LENGTH}
-            </span>
-          </div>
-          <input
-            id="household-context-input"
-            name="householdContext"
-            type="text"
-            maxLength={MAX_HOUSEHOLD_LENGTH}
-            value={formValues.householdContext}
-            onChange={(e) => {
-              onChangeValues({ ...formValues, householdContext: e.target.value });
-              if (clientErrors.householdContext) {
-                setClientErrors((prev) => ({ ...prev, householdContext: undefined }));
-              }
-            }}
-            placeholder="e.g., School-age kids, older parent, gas stove, ground-floor apartment near busy road"
-            aria-invalid={Boolean(errors.householdContext)}
-            aria-describedby={
-              errors.householdContext ? 'household-help household-error' : 'household-help'
-            }
-            className={`mt-1.5 block min-h-[44px] w-full rounded-lg border px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 ${
-              errors.householdContext ? 'border-red-500 bg-red-50/40' : 'border-slate-300 bg-white'
-            }`}
-          />
-          <p id="household-help" className="mt-1 text-xs text-slate-600">
-            Optional general household context (avoid entering private names or medical records).
-          </p>
-          {errors.householdContext && (
-            <p id="household-error" className="mt-1 text-xs font-medium text-red-700">
-              {errors.householdContext}
-            </p>
-          )}
-        </div>
+        <TextInputField
+          id="household-context-input"
+          name="householdContext"
+          label="Household or lifestyle notes"
+          labelBadge="(Optional)"
+          maxLength={MAX_HOUSEHOLD_LENGTH}
+          showCounter
+          value={formValues.householdContext}
+          placeholder="e.g., School-age kids, older parent, gas stove, ground-floor apartment near busy road"
+          helpText="Optional general household context (avoid entering private names or medical records)."
+          error={errors.householdContext}
+          onChange={handleHouseholdChange}
+        />
 
         {/* Optional Checkboxes: Indoor Resources & Sustainability Goals */}
         <div className="grid grid-cols-1 gap-5 pt-1 lg:grid-cols-2">
@@ -414,4 +465,4 @@ export function AirQualityForm({
       </form>
     </section>
   );
-}
+});

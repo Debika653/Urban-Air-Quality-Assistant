@@ -45,7 +45,7 @@ test('App renders semantic landmarks, skip link, title, empty state, and respons
   assert.ok(html.includes('href="#main-content"'));
   assert.ok(html.includes('<header'));
   assert.ok(html.includes('<nav'));
-  assert.ok(html.includes('<main id="main-content"'));
+  assert.ok(html.includes('<main id="main-content" tabindex="-1"'));
   assert.ok(html.includes('<footer'));
   assert.ok(html.includes('<h1'));
   assert.ok(html.includes('CleanAir Companion'));
@@ -54,7 +54,7 @@ test('App renders semantic landmarks, skip link, title, empty state, and respons
   assert.ok(html.includes('xl:grid-cols-12'));
 });
 
-test('AirQualityForm renders accessible labels, valid aria-describedby references, and error summary', () => {
+test('AirQualityForm renders accessible labels, valid aria-describedby references, contrast placeholders, and error summary links', () => {
   const htmlNoErrors = renderToStaticMarkup(
     createElement(AirQualityForm, {
       formValues: DEFAULT_USER_INPUT,
@@ -86,6 +86,7 @@ test('AirQualityForm renders accessible labels, valid aria-describedby reference
   }
 
   assert.ok(htmlNoErrors.includes('aria-required="true"'));
+  assert.ok(htmlNoErrors.includes('placeholder:text-slate-500'));
   assert.ok(htmlNoErrors.includes('Reset Form'));
   assert.ok(htmlNoErrors.includes('Generate Personalized Guidance'));
 
@@ -110,11 +111,24 @@ test('AirQualityForm renders accessible labels, valid aria-describedby reference
   );
 
   assert.ok(htmlWithErrors.includes('role="alert"'));
-  assert.ok(htmlWithErrors.includes('id="city-error"'));
-  assert.ok(htmlWithErrors.includes('id="manual-aqi-error"'));
+  assert.ok(htmlWithErrors.includes('tabindex="-1"'));
+  assert.ok(htmlWithErrors.includes('href="#city-input"'));
+  assert.ok(htmlWithErrors.includes('href="#manual-aqi-input"'));
+  assert.ok(htmlWithErrors.includes('id="city-input-error"'));
+  assert.ok(htmlWithErrors.includes('id="manual-aqi-input-error"'));
+
+  const errorDescribedByMatches = [...htmlWithErrors.matchAll(/aria-describedby="([^"]+)"/g)];
+  for (const match of errorDescribedByMatches) {
+    for (const id of match[1].split(/\s+/)) {
+      assert.ok(
+        htmlWithErrors.includes(`id="${id}"`),
+        `Referenced aria-describedby id "${id}" not found in error form HTML`,
+      );
+    }
+  }
 });
 
-test('GuidanceResults renders sequential heading levels, all required sections, and escapes untrusted HTML', () => {
+test('GuidanceResults renders sequential heading levels, accessible action labels, and escapes untrusted HTML', () => {
   const rawAdverse = {
     ...buildSampleGuidance(),
     summary: '<script>alert("xss")</script>Winter smog overview',
@@ -145,7 +159,7 @@ test('GuidanceResults renders sequential heading levels, all required sections, 
     );
   }
 
-  // Verify core sections & non-color priority text
+  // Verify core sections, non-color priority text, and descriptive button aria-labels
   assert.ok(html.includes('Low-Emission Daily Action Plan'));
   assert.ok(html.includes('Indoor Air-Quality Improvement'));
   assert.ok(html.includes('Sustainable Mobility'));
@@ -155,9 +169,10 @@ test('GuidanceResults renders sequential heading levels, all required sections, 
   assert.ok(html.includes('High priority'));
   assert.ok(html.includes('Medium priority'));
   assert.ok(html.includes('Low priority'));
+  assert.ok(html.includes('aria-label="Mark as done today: Seal windows during overnight inversion"'));
 });
 
-test('PollutionStatusPanel distinguishes live, manual, and unavailable AQI states honestly', () => {
+test('PollutionStatusPanel distinguishes live, manual, and unavailable AQI states honestly and guards invalid timestamps', () => {
   const unavailableHtml = renderToStaticMarkup(
     createElement(PollutionStatusPanel, {
       city: 'Unknown City',
@@ -175,12 +190,13 @@ test('PollutionStatusPanel distinguishes live, manual, and unavailable AQI state
       },
       effectiveAqi: null,
       aqiSourceType: 'none',
-      generatedAt: null,
+      generatedAt: 'invalid-date',
     }),
   );
 
   assert.ok(unavailableHtml.includes('AQI Not Specified'));
   assert.ok(unavailableHtml.includes('Live data unavailable · Precautionary'));
+  assert.equal(unavailableHtml.includes('Invalid Date'), false);
 
   const liveHtml = renderToStaticMarkup(
     createElement(PollutionStatusPanel, {

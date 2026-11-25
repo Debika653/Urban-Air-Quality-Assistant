@@ -1,4 +1,6 @@
 import {
+  hasOwn,
+  isPlainObject,
   validateAiGuidanceResponse,
   validateLiveAqiReading,
   type GuidanceApiResult,
@@ -6,11 +8,6 @@ import {
   type UserProfileInput,
   type ValidationErrors,
 } from '../shared/airQualitySchema.ts';
-
-interface ApiErrorBody {
-  error?: unknown;
-  fieldErrors?: unknown;
-}
 
 export type ApiOutcome<T> =
   | { ok: true; data: T }
@@ -28,25 +25,25 @@ async function safeParseJson(response: Response): Promise<unknown> {
   }
 }
 
+const ALLOWED_ERROR_KEYS: ReadonlyArray<keyof ValidationErrors> = [
+  'city',
+  'manualAqi',
+  'commuteMethod',
+  'householdContext',
+  'outdoorHabits',
+  'mainConcern',
+  'seasonMode',
+  'general',
+];
+
 function extractFieldErrors(raw: unknown): ValidationErrors | undefined {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+  if (!isPlainObject(raw)) {
     return undefined;
   }
   const result: ValidationErrors = {};
-  const source = raw as Record<string, unknown>;
-  const keys: Array<keyof ValidationErrors> = [
-    'city',
-    'manualAqi',
-    'commuteMethod',
-    'householdContext',
-    'outdoorHabits',
-    'mainConcern',
-    'seasonMode',
-    'general',
-  ];
-  for (const key of keys) {
-    if (typeof source[key] === 'string' && source[key].trim()) {
-      result[key] = source[key].trim();
+  for (const key of ALLOWED_ERROR_KEYS) {
+    if (hasOwn(raw, key) && typeof raw[key] === 'string' && raw[key].trim()) {
+      result[key] = raw[key].trim();
     }
   }
   return Object.keys(result).length > 0 ? result : undefined;
@@ -68,17 +65,17 @@ export async function fetchLiveAqi(
   });
 
   const body = await safeParseJson(response);
-  const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
+  const record = isPlainObject(body) ? body : null;
 
   if (!response.ok) {
     const message =
-      record && typeof record.error === 'string'
+      record && hasOwn(record, 'error') && typeof record.error === 'string'
         ? record.error
         : 'Could not check live AQI for that location.';
     return { ok: false, error: message };
   }
 
-  const reading = validateLiveAqiReading(record?.reading);
+  const reading = validateLiveAqiReading(record && hasOwn(record, 'reading') ? record.reading : null);
   if (!reading) {
     return {
       ok: false,
@@ -101,18 +98,17 @@ export async function requestAirQualityGuidance(
   });
 
   const body = await safeParseJson(response);
-  const record =
-    body && typeof body === 'object' ? (body as Record<string, unknown> & ApiErrorBody) : null;
+  const record = isPlainObject(body) ? body : null;
 
   if (!response.ok) {
     const message =
-      record && typeof record.error === 'string'
+      record && hasOwn(record, 'error') && typeof record.error === 'string'
         ? record.error
         : 'Guidance could not be generated right now. Your inputs are preserved so you can retry.';
     return {
       ok: false,
       error: message,
-      fieldErrors: extractFieldErrors(record?.fieldErrors),
+      fieldErrors: extractFieldErrors(record && hasOwn(record, 'fieldErrors') ? record.fieldErrors : null),
     };
   }
 
@@ -123,7 +119,9 @@ export async function requestAirQualityGuidance(
     };
   }
 
-  const verifiedGuidance = validateAiGuidanceResponse(record.guidance);
+  const verifiedGuidance = validateAiGuidanceResponse(
+    hasOwn(record, 'guidance') ? record.guidance : null,
+  );
   if (!verifiedGuidance.valid || !verifiedGuidance.data) {
     return {
       ok: false,
@@ -131,7 +129,9 @@ export async function requestAirQualityGuidance(
     };
   }
 
-  const validatedLiveAqi = validateLiveAqiReading(record.liveAqi) ?? {
+  const validatedLiveAqi = validateLiveAqiReading(
+    hasOwn(record, 'liveAqi') ? record.liveAqi : null,
+  ) ?? {
     status: 'unavailable',
     source: null,
     resolvedLocation: null,
@@ -143,12 +143,21 @@ export async function requestAirQualityGuidance(
     note: 'Live air-quality data status could not be confirmed.',
   };
 
+  const rawSourceType = hasOwn(record, 'aqiSourceType') ? record.aqiSourceType : undefined;
   const sourceType =
-    record.aqiSourceType === 'live' ||
-    record.aqiSourceType === 'manual' ||
-    record.aqiSourceType === 'none'
-      ? record.aqiSourceType
+    rawSourceType === 'live' || rawSourceType === 'manual' || rawSourceType === 'none'
+      ? rawSourceType
       : 'none';
+
+  const rawGeneratedAt = hasOwn(record, 'generatedAt') ? record.generatedAt : undefined;
+  const generatedAt =
+    typeof rawGeneratedAt === 'string' &&
+    rawGeneratedAt.length <= 40 &&
+    !Number.isNaN(Date.parse(rawGeneratedAt))
+      ? rawGeneratedAt
+      : new Date().toISOString();
+
+  const rawEffectiveAqi = hasOwn(record, 'effectiveAqi') ? record.effectiveAqi : undefined;
 
   return {
     ok: true,
@@ -156,12 +165,11 @@ export async function requestAirQualityGuidance(
       guidance: verifiedGuidance.data,
       liveAqi: validatedLiveAqi,
       effectiveAqi:
-        typeof record.effectiveAqi === 'number' && Number.isFinite(record.effectiveAqi)
-          ? record.effectiveAqi
+        typeof rawEffectiveAqi === 'number' && Number.isFinite(rawEffectiveAqi)
+          ? rawEffectiveAqi
           : null,
       aqiSourceType: sourceType,
-      generatedAt:
-        typeof record.generatedAt === 'string' ? record.generatedAt : new Date().toISOString(),
+      generatedAt,
     },
   };
 }

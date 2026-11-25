@@ -1,13 +1,15 @@
 import { AlertTriangle, Check, CheckCircle2, Info } from 'lucide-react';
+import { memo } from 'react';
 import type { RecommendationItem, RecommendationPriority } from '../shared/airQualitySchema.ts';
 
 interface RecommendationCardProps {
   item: RecommendationItem;
+  itemKey?: string;
   categoryLabel?: string;
   headingLevel?: 'h3' | 'h4';
   conciseMode?: boolean;
   completed?: boolean;
-  onToggleCompleted?: () => void;
+  onToggleCompleted?: (key: string) => void;
 }
 
 function getPriorityPresentation(priority: RecommendationPriority) {
@@ -34,8 +36,9 @@ function getPriorityPresentation(priority: RecommendationPriority) {
   }
 }
 
-export function RecommendationCard({
+export const RecommendationCard = memo(function RecommendationCard({
   item,
+  itemKey,
   categoryLabel,
   headingLevel = 'h3',
   conciseMode = false,
@@ -101,12 +104,13 @@ export function RecommendationCard({
         )}
       </div>
 
-      {onToggleCompleted && (
+      {onToggleCompleted && itemKey && (
         <div className="mt-4 border-t border-slate-100 pt-3">
           <button
             type="button"
-            onClick={onToggleCompleted}
+            onClick={() => onToggleCompleted(itemKey)}
             aria-pressed={completed}
+            aria-label={`${completed ? 'Mark as not done' : 'Mark as done today'}: ${item.title}`}
             className={`inline-flex min-h-[40px] items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
               completed
                 ? 'border-teal-700 bg-teal-700 text-white hover:bg-teal-800'
@@ -120,4 +124,4 @@ export function RecommendationCard({
       )}
     </article>
   );
-}
+});
