@@ -15,17 +15,15 @@ import {
   SEASON_MODE_LABELS,
   SUSTAINABILITY_GOALS,
   SUSTAINABILITY_GOAL_LABELS,
+  validateCityName,
   validateUserProfileInput,
-  type CommuteMethod,
   type IndoorResource,
-  type MainConcern,
-  type OutdoorHabit,
-  type SeasonMode,
   type SustainabilityGoal,
   type UserProfileInput,
   type ValidationErrors,
 } from '../shared/airQualitySchema.ts';
 import { SCENARIO_PRESETS } from '../utils/presets.ts';
+import { ChecklistFieldset, SelectField } from './FormControls.tsx';
 
 interface AirQualityFormProps {
   formValues: UserProfileInput;
@@ -105,16 +103,16 @@ export function AirQualityForm({
   };
 
   const handleCityAqiCheck = () => {
-    const trimmed = formValues.city.trim();
-    if (trimmed.length < 2 || !/\p{L}/u.test(trimmed)) {
+    const cityCheck = validateCityName(formValues.city);
+    if (!cityCheck.valid) {
       setClientErrors((prev) => ({
         ...prev,
-        city: 'Enter a valid city or location name (at least 2 letters) to check AQI.',
+        city: cityCheck.error || 'Enter a valid city or location name to check AQI.',
       }));
       return;
     }
     setClientErrors((prev) => ({ ...prev, city: undefined }));
-    onCheckAqiOnly(trimmed);
+    onCheckAqiOnly(cityCheck.city);
   };
 
   const handlePresetLoad = (presetId: string) => {
@@ -126,7 +124,7 @@ export function AirQualityForm({
     onChangeValues({ ...found.input, useLiveLookup });
     onChangeManualAqiText(found.input.manualAqi !== null ? String(found.input.manualAqi) : '');
     setPresetNotice(
-      `Loaded "${found.label}" sample profile. Review or adjust any field, then select Generate Guidance.`,
+      `Loaded "${found.label}" sample profile. Review or adjust any field, then select Generate Personalized Guidance.`,
     );
   };
 
@@ -141,20 +139,18 @@ export function AirQualityForm({
       aria-labelledby="profile-form-heading"
       className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
     >
-      <div className="flex flex-col gap-2 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 id="profile-form-heading" className="text-xl font-semibold text-slate-900">
-            Household &amp; Location Profile
-          </h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Personalize recommendations to your city, pollution conditions, commute, and indoor setup. Only your location and routine preferences are needed.
-          </p>
-        </div>
+      <div className="border-b border-slate-200 pb-4">
+        <h2 id="profile-form-heading" className="text-xl font-semibold text-slate-900">
+          Household &amp; Location Profile
+        </h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Personalize recommendations to your city, pollution conditions, commute, and indoor setup. Only your location and routine preferences are needed.
+        </p>
       </div>
 
       {/* Quick-fill sample profiles */}
       <div className="mt-4 border-b border-slate-100 pb-4">
-        <p className="text-xs font-medium text-slate-600">
+        <p className="text-xs font-medium text-slate-700">
           Sample household scenarios (populates form for review):
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -201,7 +197,7 @@ export function AirQualityForm({
               <label htmlFor="city-input" className="text-sm font-medium text-slate-900">
                 City or location <span className="text-teal-800">(Required)</span>
               </label>
-              <span className="font-mono text-xs tabular-nums text-slate-500">
+              <span className="font-mono text-xs tabular-nums text-slate-600">
                 {formValues.city.length}/{MAX_CITY_LENGTH}
               </span>
             </div>
@@ -223,7 +219,7 @@ export function AirQualityForm({
                 }}
                 placeholder="e.g., Delhi, Salt Lake City, Milan"
                 aria-invalid={Boolean(errors.city)}
-                aria-describedby="city-help city-error"
+                aria-describedby={errors.city ? 'city-help city-error' : 'city-help'}
                 className={`block min-h-[44px] w-full rounded-lg border px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 ${
                   errors.city ? 'border-red-500 bg-red-50/40' : 'border-slate-300 bg-white'
                 }`}
@@ -244,7 +240,7 @@ export function AirQualityForm({
                 </button>
               )}
             </div>
-            <p id="city-help" className="mt-1 text-xs text-slate-500">
+            <p id="city-help" className="mt-1 text-xs text-slate-600">
               Used to contextualize regional air quality and seasonal inversion guidance.
             </p>
             {errors.city && (
@@ -257,7 +253,7 @@ export function AirQualityForm({
           {/* Manual AQI Input */}
           <div>
             <label htmlFor="manual-aqi-input" className="block text-sm font-medium text-slate-900">
-              Manual US AQI reading <span className="font-normal text-slate-500">(Optional)</span>
+              Manual US AQI reading <span className="font-normal text-slate-600">(Optional)</span>
             </label>
             <input
               id="manual-aqi-input"
@@ -274,12 +270,14 @@ export function AirQualityForm({
               }}
               placeholder="0–500 (leave blank if unknown)"
               aria-invalid={Boolean(errors.manualAqi)}
-              aria-describedby="manual-aqi-help manual-aqi-error"
+              aria-describedby={
+                errors.manualAqi ? 'manual-aqi-help manual-aqi-error' : 'manual-aqi-help'
+              }
               className={`mt-1.5 block min-h-[44px] w-full rounded-lg border px-3 py-2 font-mono text-sm tabular-nums text-slate-900 placeholder:font-sans placeholder:text-slate-400 ${
                 errors.manualAqi ? 'border-red-500 bg-red-50/40' : 'border-slate-300 bg-white'
               }`}
             />
-            <p id="manual-aqi-help" className="mt-1 text-xs text-slate-500">
+            <p id="manual-aqi-help" className="mt-1 text-xs text-slate-600">
               If you have a local neighborhood monitor or official station reading (0–500), enter it here to override modeled grid estimates.
             </p>
             {errors.manualAqi && (
@@ -289,102 +287,54 @@ export function AirQualityForm({
             )}
           </div>
 
-          {/* Season Context */}
-          <div>
-            <label htmlFor="season-mode-select" className="block text-sm font-medium text-slate-900">
-              Pollution episode context
-            </label>
-            <select
-              id="season-mode-select"
-              name="seasonMode"
-              value={formValues.seasonMode}
-              onChange={(e) =>
-                onChangeValues({ ...formValues, seasonMode: e.target.value as SeasonMode })
-              }
-              className="mt-1.5 block min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-            >
-              {SEASON_MODES.map((mode) => (
-                <option key={mode} value={mode}>
-                  {SEASON_MODE_LABELS[mode]}
-                </option>
-              ))}
-            </select>
-          </div>
+          <SelectField
+            id="season-mode-select"
+            name="seasonMode"
+            label="Pollution episode context"
+            value={formValues.seasonMode}
+            options={SEASON_MODES}
+            labels={SEASON_MODE_LABELS}
+            onChange={(seasonMode) => onChangeValues({ ...formValues, seasonMode })}
+          />
 
-          {/* Commute Method */}
-          <div>
-            <label htmlFor="commute-select" className="block text-sm font-medium text-slate-900">
-              Primary commute method
-            </label>
-            <select
-              id="commute-select"
-              name="commuteMethod"
-              value={formValues.commuteMethod}
-              onChange={(e) =>
-                onChangeValues({ ...formValues, commuteMethod: e.target.value as CommuteMethod })
-              }
-              className="mt-1.5 block min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-            >
-              {COMMUTE_METHODS.map((method) => (
-                <option key={method} value={method}>
-                  {COMMUTE_METHOD_LABELS[method]}
-                </option>
-              ))}
-            </select>
-          </div>
+          <SelectField
+            id="commute-select"
+            name="commuteMethod"
+            label="Primary commute method"
+            value={formValues.commuteMethod}
+            options={COMMUTE_METHODS}
+            labels={COMMUTE_METHOD_LABELS}
+            onChange={(commuteMethod) => onChangeValues({ ...formValues, commuteMethod })}
+          />
 
-          {/* Outdoor Activity Habits */}
-          <div>
-            <label htmlFor="outdoor-habits-select" className="block text-sm font-medium text-slate-900">
-              Daily outdoor activity habits
-            </label>
-            <select
-              id="outdoor-habits-select"
-              name="outdoorHabits"
-              value={formValues.outdoorHabits}
-              onChange={(e) =>
-                onChangeValues({ ...formValues, outdoorHabits: e.target.value as OutdoorHabit })
-              }
-              className="mt-1.5 block min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-            >
-              {OUTDOOR_HABITS.map((habit) => (
-                <option key={habit} value={habit}>
-                  {OUTDOOR_HABIT_LABELS[habit]}
-                </option>
-              ))}
-            </select>
-          </div>
+          <SelectField
+            id="outdoor-habits-select"
+            name="outdoorHabits"
+            label="Daily outdoor activity habits"
+            value={formValues.outdoorHabits}
+            options={OUTDOOR_HABITS}
+            labels={OUTDOOR_HABIT_LABELS}
+            onChange={(outdoorHabits) => onChangeValues({ ...formValues, outdoorHabits })}
+          />
 
-          {/* Main Concern */}
-          <div>
-            <label htmlFor="main-concern-select" className="block text-sm font-medium text-slate-900">
-              Main concern
-            </label>
-            <select
-              id="main-concern-select"
-              name="mainConcern"
-              value={formValues.mainConcern}
-              onChange={(e) =>
-                onChangeValues({ ...formValues, mainConcern: e.target.value as MainConcern })
-              }
-              className="mt-1.5 block min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-            >
-              {MAIN_CONCERNS.map((concern) => (
-                <option key={concern} value={concern}>
-                  {MAIN_CONCERN_LABELS[concern]}
-                </option>
-              ))}
-            </select>
-          </div>
+          <SelectField
+            id="main-concern-select"
+            name="mainConcern"
+            label="Main concern"
+            value={formValues.mainConcern}
+            options={MAIN_CONCERNS}
+            labels={MAIN_CONCERN_LABELS}
+            onChange={(mainConcern) => onChangeValues({ ...formValues, mainConcern })}
+          />
         </div>
 
         {/* Household Context (Optional) */}
         <div>
           <div className="flex items-center justify-between gap-2">
             <label htmlFor="household-context-input" className="text-sm font-medium text-slate-900">
-              Household or lifestyle notes <span className="font-normal text-slate-500">(Optional)</span>
+              Household or lifestyle notes <span className="font-normal text-slate-600">(Optional)</span>
             </label>
-            <span className="font-mono text-xs tabular-nums text-slate-500">
+            <span className="font-mono text-xs tabular-nums text-slate-600">
               {formValues.householdContext.length}/{MAX_HOUSEHOLD_LENGTH}
             </span>
           </div>
@@ -402,12 +352,14 @@ export function AirQualityForm({
             }}
             placeholder="e.g., School-age kids, older parent, gas stove, ground-floor apartment near busy road"
             aria-invalid={Boolean(errors.householdContext)}
-            aria-describedby="household-help household-error"
+            aria-describedby={
+              errors.householdContext ? 'household-help household-error' : 'household-help'
+            }
             className={`mt-1.5 block min-h-[44px] w-full rounded-lg border px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 ${
               errors.householdContext ? 'border-red-500 bg-red-50/40' : 'border-slate-300 bg-white'
             }`}
           />
-          <p id="household-help" className="mt-1 text-xs text-slate-500">
+          <p id="household-help" className="mt-1 text-xs text-slate-600">
             Optional general household context (avoid entering private names or medical records).
           </p>
           {errors.householdContext && (
@@ -419,57 +371,23 @@ export function AirQualityForm({
 
         {/* Optional Checkboxes: Indoor Resources & Sustainability Goals */}
         <div className="grid grid-cols-1 gap-5 pt-1 lg:grid-cols-2">
-          <fieldset className="rounded-lg border border-slate-200 p-4">
-            <legend className="px-1 text-sm font-medium text-slate-900">
-              Available indoor air-quality resources{' '}
-              <span className="font-normal text-slate-500">(Optional)</span>
-            </legend>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {INDOOR_RESOURCES.map((resource) => {
-                const checked = formValues.indoorResources.includes(resource);
-                return (
-                  <label
-                    key={resource}
-                    className="flex min-h-[40px] cursor-pointer items-center gap-2.5 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleIndoorResource(resource)}
-                      className="h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-700"
-                    />
-                    <span>{INDOOR_RESOURCE_LABELS[resource]}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
+          <ChecklistFieldset
+            legend="Available indoor air-quality resources"
+            options={INDOOR_RESOURCES}
+            labels={INDOOR_RESOURCE_LABELS}
+            selected={formValues.indoorResources}
+            columns={2}
+            onToggle={toggleIndoorResource}
+          />
 
-          <fieldset className="rounded-lg border border-slate-200 p-4">
-            <legend className="px-1 text-sm font-medium text-slate-900">
-              Preferred sustainability goals{' '}
-              <span className="font-normal text-slate-500">(Optional)</span>
-            </legend>
-            <div className="mt-2 grid grid-cols-1 gap-2">
-              {SUSTAINABILITY_GOALS.map((goal) => {
-                const checked = formValues.sustainabilityGoals.includes(goal);
-                return (
-                  <label
-                    key={goal}
-                    className="flex min-h-[40px] cursor-pointer items-center gap-2.5 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleSustainabilityGoal(goal)}
-                      className="h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-700"
-                    />
-                    <span>{SUSTAINABILITY_GOAL_LABELS[goal]}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
+          <ChecklistFieldset
+            legend="Preferred sustainability goals"
+            options={SUSTAINABILITY_GOALS}
+            labels={SUSTAINABILITY_GOAL_LABELS}
+            selected={formValues.sustainabilityGoals}
+            columns={1}
+            onToggle={toggleSustainabilityGoal}
+          />
         </div>
 
         {/* Form Actions */}

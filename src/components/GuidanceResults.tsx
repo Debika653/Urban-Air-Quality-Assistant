@@ -108,7 +108,7 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
             </h3>
             <ul className="mt-1.5 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-slate-700">
               {guidance.data_limitations.map((note, idx) => (
-                <li key={idx}>{note}</li>
+                <li key={`limitation-${idx}-${note.slice(0, 24)}`}>{note}</li>
               ))}
             </ul>
           </div>
@@ -129,8 +129,12 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
               Timed guidance across morning, midday, and evening to reduce exposure and household emissions.
             </p>
           </div>
-          <p className="font-mono text-xs font-medium tabular-nums text-slate-700">
-            {completedCount} of {allDailyItems.length} actions completed today
+          <p
+            role="status"
+            aria-live="polite"
+            className="font-mono text-xs font-medium tabular-nums text-slate-700"
+          >
+            Showing {filteredDailyItems.length} of {allDailyItems.length} actions · {completedCount} completed today
           </p>
         </div>
 
@@ -159,7 +163,7 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
                   className={`min-h-[36px] rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                     active
                       ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                      : 'text-slate-700 hover:text-slate-900'
                   }`}
                 >
                   {label}
@@ -191,7 +195,7 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
                   className={`min-h-[36px] rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                     active
                       ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                      : 'text-slate-700 hover:text-slate-900'
                   }`}
                 >
                   {label}
@@ -224,6 +228,7 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
                 key={entry.key}
                 item={entry.item}
                 categoryLabel={entry.periodLabel}
+                headingLevel="h3"
                 conciseMode={conciseMode}
                 completed={Boolean(completedMap[entry.key])}
                 onToggleCompleted={() => toggleItemCompleted(entry.key)}
@@ -253,6 +258,7 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
               key={`indoor-${idx}-${item.title}`}
               item={item}
               categoryLabel="Indoor air"
+              headingLevel="h3"
               conciseMode={conciseMode}
             />
           ))}
@@ -280,6 +286,7 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
                 key={`sustain-${idx}-${item.title}`}
                 item={item}
                 categoryLabel="Sustainable choice"
+                headingLevel="h3"
                 conciseMode={conciseMode}
               />
             ))}
@@ -305,6 +312,7 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
                 key={`impact-${idx}-${item.title}`}
                 item={item}
                 categoryLabel="Impact mechanism"
+                headingLevel="h4"
                 conciseMode={conciseMode}
               />
             ))}
@@ -331,7 +339,10 @@ export function GuidanceResults({ guidance, conciseMode }: GuidanceResultsProps)
 
         <ul className="mt-4 space-y-3">
           {guidance.safety_notes.map((note, idx) => (
-            <li key={idx} className="flex items-start gap-3 text-sm leading-relaxed text-slate-700">
+            <li
+              key={`safety-${idx}-${note.slice(0, 24)}`}
+              className="flex items-start gap-3 text-sm leading-relaxed text-slate-700"
+            >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
               <span>{note}</span>
             </li>

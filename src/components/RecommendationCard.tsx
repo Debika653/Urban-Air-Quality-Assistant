@@ -4,6 +4,7 @@ import type { RecommendationItem, RecommendationPriority } from '../shared/airQu
 interface RecommendationCardProps {
   item: RecommendationItem;
   categoryLabel?: string;
+  headingLevel?: 'h3' | 'h4';
   conciseMode?: boolean;
   completed?: boolean;
   onToggleCompleted?: () => void;
@@ -20,8 +21,8 @@ function getPriorityPresentation(priority: RecommendationPriority) {
     case 'low':
       return {
         label: 'Low priority',
-        textClass: 'text-slate-600',
-        icon: <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden="true" />,
+        textClass: 'text-slate-700',
+        icon: <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-slate-600" aria-hidden="true" />,
       };
     case 'medium':
     default:
@@ -36,11 +37,13 @@ function getPriorityPresentation(priority: RecommendationPriority) {
 export function RecommendationCard({
   item,
   categoryLabel,
+  headingLevel = 'h3',
   conciseMode = false,
   completed = false,
   onToggleCompleted,
 }: RecommendationCardProps) {
   const priorityMeta = getPriorityPresentation(item.priority);
+  const HeadingTag = headingLevel;
 
   return (
     <article
@@ -61,16 +64,16 @@ export function RecommendationCard({
                 <span aria-hidden="true" className="text-slate-300">
                   ·
                 </span>
-                <span className="font-medium text-slate-600">{categoryLabel}</span>
+                <span className="font-medium text-slate-700">{categoryLabel}</span>
               </>
             )}
           </div>
-          <span className="text-slate-500">{item.practicality}</span>
+          <span className="text-slate-600">{item.practicality}</span>
         </div>
 
-        <h4 className="mt-2.5 text-base font-semibold text-slate-900">
+        <HeadingTag className="mt-2.5 text-base font-semibold text-slate-900">
           {item.title}
-        </h4>
+        </HeadingTag>
 
         <p className="mt-2 text-sm font-medium leading-relaxed text-slate-800">
           {item.action}
@@ -79,18 +82,18 @@ export function RecommendationCard({
         {!conciseMode && (
           <dl className="mt-4 space-y-2.5 border-t border-slate-100 pt-3 text-sm">
             <div>
-              <dt className="text-xs font-semibold text-slate-500">Why it matters</dt>
+              <dt className="text-xs font-semibold text-slate-600">Why it matters</dt>
               <dd className="mt-0.5 leading-relaxed text-slate-700">{item.reason}</dd>
             </div>
             <div>
-              <dt className="text-xs font-semibold text-slate-500">
+              <dt className="text-xs font-semibold text-slate-600">
                 Environmental &amp; exposure benefit
               </dt>
               <dd className="mt-0.5 leading-relaxed text-slate-700">{item.impact}</dd>
             </div>
             {item.limitation && (
               <div>
-                <dt className="text-xs font-semibold text-slate-500">Limitation / safety note</dt>
+                <dt className="text-xs font-semibold text-slate-600">Limitation / safety note</dt>
                 <dd className="mt-0.5 leading-relaxed text-slate-600">{item.limitation}</dd>
               </div>
             )}

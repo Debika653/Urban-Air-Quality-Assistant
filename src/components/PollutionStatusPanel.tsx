@@ -56,7 +56,7 @@ export function PollutionStatusPanel({
           <h2 id="pollution-status-heading" className="text-lg font-semibold text-slate-900">
             Air-Quality Data &amp; Availability
           </h2>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-600">
             {city ? `Selected location: ${city}` : 'No location submitted yet'}
           </p>
         </div>

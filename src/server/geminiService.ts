@@ -92,7 +92,8 @@ const GUIDANCE_RESPONSE_SCHEMA = {
     environmental_impact: {
       type: Type.ARRAY,
       items: RECOMMENDATION_ITEM_SCHEMA,
-      description: '2 to 3 clear explanations of how user choices affect emissions, exposure, and local air.',
+      description:
+        '2 to 3 explanations comparing practical alternatives, emission-reduction mechanisms, exposure benefits, and resource savings without fabricated numbers.',
     },
     safety_notes: {
       type: Type.ARRAY,
@@ -256,11 +257,16 @@ export async function generateAirQualityGuidance(
         },
       });
 
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Gemini request timeout')), GEMINI_TIMEOUT_MS);
+        timeoutId = setTimeout(() => reject(new Error('Gemini request timeout')), GEMINI_TIMEOUT_MS);
       });
 
-      const response = await Promise.race([responsePromise, timeoutPromise]);
+      const response = await Promise.race([responsePromise, timeoutPromise]).finally(() => {
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
+      });
       const rawText = (response.text ?? '').trim();
 
       if (!rawText) {

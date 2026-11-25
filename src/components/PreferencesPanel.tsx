@@ -44,10 +44,10 @@ export function PreferencesPanel({
       <div className="mt-4 divide-y divide-slate-100">
         <div className="flex flex-col justify-between gap-3 py-3.5 sm:flex-row sm:items-center">
           <div>
-            <label htmlFor="pref-live-aqi" className="text-sm font-medium text-slate-900">
+            <span id="pref-live-aqi-label" className="text-sm font-medium text-slate-900">
               Live regional AQI lookup (Open-Meteo)
-            </label>
-            <p className="mt-0.5 text-xs text-slate-600">
+            </span>
+            <p id="pref-live-aqi-desc" className="mt-0.5 text-xs text-slate-600">
               When enabled, checking a city or generating a plan queries Open-Meteo for current modeled AQI. Disable to rely strictly on manual AQI input or precautionary mode.
             </p>
           </div>
@@ -56,6 +56,8 @@ export function PreferencesPanel({
             type="button"
             role="switch"
             aria-checked={preferences.useLiveLookup}
+            aria-labelledby="pref-live-aqi-label"
+            aria-describedby="pref-live-aqi-desc"
             onClick={() =>
               onChangePreferences({
                 ...preferences,
@@ -68,16 +70,16 @@ export function PreferencesPanel({
                 : 'border-slate-300 bg-slate-100 text-slate-700'
             }`}
           >
-            {preferences.useLiveLookup ? 'Enabled' : 'Disabled'}
+            <span>{preferences.useLiveLookup ? 'Enabled' : 'Disabled'}</span>
           </button>
         </div>
 
         <div className="flex flex-col justify-between gap-3 py-3.5 sm:flex-row sm:items-center">
           <div>
-            <label htmlFor="pref-concise-mode" className="text-sm font-medium text-slate-900">
+            <span id="pref-concise-label" className="text-sm font-medium text-slate-900">
               Concise family reading view
-            </label>
-            <p className="mt-0.5 text-xs text-slate-600">
+            </span>
+            <p id="pref-concise-desc" className="mt-0.5 text-xs text-slate-600">
               Shows only priority, title, and direct action steps on cards for quick scanning; turn off to display full explanations and impact mechanisms.
             </p>
           </div>
@@ -86,6 +88,8 @@ export function PreferencesPanel({
             type="button"
             role="switch"
             aria-checked={preferences.conciseMode}
+            aria-labelledby="pref-concise-label"
+            aria-describedby="pref-concise-desc"
             onClick={() =>
               onChangePreferences({
                 ...preferences,
@@ -98,16 +102,16 @@ export function PreferencesPanel({
                 : 'border-slate-300 bg-slate-100 text-slate-700'
             }`}
           >
-            {preferences.conciseMode ? 'Concise' : 'Detailed'}
+            <span>{preferences.conciseMode ? 'Concise' : 'Detailed'}</span>
           </button>
         </div>
 
         <div className="flex flex-col justify-between gap-3 py-3.5 sm:flex-row sm:items-center">
           <div>
-            <label htmlFor="pref-reduce-motion" className="text-sm font-medium text-slate-900">
+            <span id="pref-motion-label" className="text-sm font-medium text-slate-900">
               Reduce interface motion
-            </label>
-            <p className="mt-0.5 text-xs text-slate-600">
+            </span>
+            <p id="pref-motion-desc" className="mt-0.5 text-xs text-slate-600">
               Minimizes smooth scrolling and visual transitions in addition to your operating system preference.
             </p>
           </div>
@@ -116,6 +120,8 @@ export function PreferencesPanel({
             type="button"
             role="switch"
             aria-checked={preferences.reduceMotion}
+            aria-labelledby="pref-motion-label"
+            aria-describedby="pref-motion-desc"
             onClick={() =>
               onChangePreferences({
                 ...preferences,
@@ -128,7 +134,7 @@ export function PreferencesPanel({
                 : 'border-slate-300 bg-slate-100 text-slate-700'
             }`}
           >
-            {preferences.reduceMotion ? 'Reduced' : 'Standard'}
+            <span>{preferences.reduceMotion ? 'Reduced' : 'Standard'}</span>
           </button>
         </div>
       </div>

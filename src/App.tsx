@@ -10,12 +10,13 @@ import { PollutionStatusPanel } from './components/PollutionStatusPanel.tsx';
 import { PreferencesPanel } from './components/PreferencesPanel.tsx';
 import {
   DEFAULT_USER_INPUT,
-  validateAiGuidanceResponse,
+  parseManualAqiInput,
   type GuidanceApiResult,
   type LiveAqiReading,
   type UserProfileInput,
   type ValidationErrors,
 } from './shared/airQualitySchema.ts';
+import { fetchLiveAqi, requestAirQualityGuidance } from './utils/apiClient.ts';
 import {
   DEFAULT_PREFERENCES,
   clearPreferences,
@@ -23,12 +24,6 @@ import {
   savePreferences,
   type UserPreferences,
 } from './utils/preferences.ts';
-
-interface ApiErrorResponse {
-  error?: string;
-  code?: string;
-  fieldErrors?: ValidationErrors;
-}
 
 export default function App() {
   const [preferences, setPreferences] = useState<UserPreferences>(() => loadPreferences());
@@ -39,6 +34,7 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isCheckingAqi, setIsCheckingAqi] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string>('');
   const [lastSubmittedInput, setLastSubmittedInput] = useState<UserProfileInput | null>(null);
 
   const [guidanceResult, setGuidanceResult] = useState<GuidanceApiResult | null>(null);
@@ -48,6 +44,7 @@ export default function App() {
   const cityInputRef = useRef<HTMLInputElement | null>(null);
   const guidanceAbortRef = useRef<AbortController | null>(null);
   const aqiAbortRef = useRef<AbortController | null>(null);
+  const focusTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     savePreferences(preferences);
@@ -57,19 +54,25 @@ export default function App() {
     return () => {
       guidanceAbortRef.current?.abort();
       aqiAbortRef.current?.abort();
+      if (focusTimerRef.current !== null) {
+        window.clearTimeout(focusTimerRef.current);
+      }
     };
   }, []);
 
-  const handleNavigate = useCallback((sectionId: string) => {
-    setActiveSection(sectionId);
-    const target = document.getElementById(sectionId);
-    if (target) {
-      target.scrollIntoView({
-        behavior: preferences.reduceMotion ? 'auto' : 'smooth',
-        block: 'start',
-      });
-    }
-  }, [preferences.reduceMotion]);
+  const handleNavigate = useCallback(
+    (sectionId: string) => {
+      setActiveSection(sectionId);
+      const target = document.getElementById(sectionId);
+      if (target) {
+        target.scrollIntoView({
+          behavior: preferences.reduceMotion ? 'auto' : 'smooth',
+          block: 'start',
+        });
+      }
+    },
+    [preferences.reduceMotion],
+  );
 
   const handleFocusForm = useCallback(() => {
     setActiveSection('overview');
@@ -80,7 +83,10 @@ export default function App() {
         block: 'start',
       });
     }
-    window.setTimeout(() => {
+    if (focusTimerRef.current !== null) {
+      window.clearTimeout(focusTimerRef.current);
+    }
+    focusTimerRef.current = window.setTimeout(() => {
       cityInputRef.current?.focus();
     }, 100);
   }, [preferences.reduceMotion]);
@@ -95,26 +101,21 @@ export default function App() {
       setApiError(null);
 
       try {
-        const params = new URLSearchParams({
+        const outcome = await fetchLiveAqi(
           city,
-          enabled: String(preferences.useLiveLookup),
-        });
-        const response = await fetch(`/api/aqi?${params.toString()}`, {
-          method: 'GET',
-          signal: controller.signal,
-        });
-
-        const body = (await response.json()) as {
-          reading?: LiveAqiReading;
-          error?: string;
-        };
-
-        if (!response.ok || !body.reading) {
-          setApiError(body.error || 'Could not check live AQI for that location.');
+          preferences.useLiveLookup,
+          controller.signal,
+        );
+        if (!outcome.ok) {
+          setApiError(outcome.error);
           return;
         }
-
-        setPreviewLiveAqi(body.reading);
+        setPreviewLiveAqi(outcome.data);
+        setStatusMessage(
+          outcome.data.status === 'available' && outcome.data.usAqi !== null
+            ? `Checked air quality for ${city}: ${outcome.data.usAqi} US AQI.`
+            : `Checked air quality for ${city}: live reading unavailable.`,
+        );
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
           return;
@@ -140,45 +141,18 @@ export default function App() {
     setLastSubmittedInput(input);
 
     try {
-      const response = await fetch('/api/guidance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-        signal: controller.signal,
-      });
-
-      const rawBody = (await response.json()) as GuidanceApiResult & ApiErrorResponse;
-
-      if (!response.ok) {
-        if (rawBody.fieldErrors) {
-          setServerErrors(rawBody.fieldErrors);
+      const outcome = await requestAirQualityGuidance(input, controller.signal);
+      if (!outcome.ok) {
+        if (outcome.fieldErrors) {
+          setServerErrors(outcome.fieldErrors);
         }
-        setApiError(
-          rawBody.error ||
-            'Guidance could not be generated right now. Your inputs are preserved so you can retry.',
-        );
+        setApiError(outcome.error);
         return;
       }
 
-      const verifiedGuidance = validateAiGuidanceResponse(rawBody.guidance);
-      if (!verifiedGuidance.valid || !verifiedGuidance.data) {
-        setApiError(
-          'The response from the guidance service was incomplete. Please try again.',
-        );
-        return;
-      }
-
-      const verifiedResult: GuidanceApiResult = {
-        guidance: verifiedGuidance.data,
-        liveAqi: rawBody.liveAqi,
-        effectiveAqi:
-          typeof rawBody.effectiveAqi === 'number' ? rawBody.effectiveAqi : null,
-        aqiSourceType: rawBody.aqiSourceType ?? 'none',
-        generatedAt: rawBody.generatedAt || new Date().toISOString(),
-      };
-
-      setGuidanceResult(verifiedResult);
-      setPreviewLiveAqi(verifiedResult.liveAqi);
+      setGuidanceResult(outcome.data);
+      setPreviewLiveAqi(outcome.data.liveAqi);
+      setStatusMessage(`Personalized air-quality guidance generated for ${input.city}.`);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         return;
@@ -203,6 +177,7 @@ export default function App() {
     setLastSubmittedInput(null);
     setIsSubmitting(false);
     setIsCheckingAqi(false);
+    setStatusMessage('Form and guidance plan cleared.');
   }, []);
 
   const handleRetry = useCallback(() => {
@@ -214,18 +189,13 @@ export default function App() {
   const handleResetPreferences = useCallback(() => {
     clearPreferences();
     setPreferences(DEFAULT_PREFERENCES);
+    setStatusMessage('Accessibility and lookup preferences reset to defaults.');
   }, []);
 
-  const parsedManualPreview =
-    manualAqiText.trim() !== '' && /^\d+$/.test(manualAqiText.trim())
-      ? Number(manualAqiText.trim())
-      : null;
-  const validManualPreview =
-    parsedManualPreview !== null &&
-    parsedManualPreview >= 0 &&
-    parsedManualPreview <= 500
-      ? parsedManualPreview
-      : null;
+  const manualAqiCheck = parseManualAqiInput(
+    manualAqiText.trim() === '' ? null : manualAqiText.trim(),
+  );
+  const validManualPreview = manualAqiCheck.valid ? manualAqiCheck.value : null;
 
   const activeLiveAqi = guidanceResult?.liveAqi ?? previewLiveAqi;
   const activeEffectiveAqi =
@@ -256,6 +226,10 @@ export default function App() {
         >
           Skip to main content
         </a>
+
+        <div className="sr-only" role="status" aria-live="polite">
+          {statusMessage}
+        </div>
 
         <Header
           activeSection={activeSection}
@@ -354,6 +328,7 @@ export default function App() {
             <DashboardSkeleton />
           ) : guidanceResult ? (
             <GuidanceResults
+              key={guidanceResult.generatedAt}
               guidance={guidanceResult.guidance}
               conciseMode={preferences.conciseMode}
             />

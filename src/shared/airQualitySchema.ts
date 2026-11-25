@@ -192,15 +192,119 @@ export const DEFAULT_USER_INPUT: UserProfileInput = {
 };
 
 /**
- * Strips control characters, HTML/XML angle brackets, and normalizes whitespace.
+ * Strips control characters, invisible bidi/zero-width spoofing characters,
+ * HTML/XML angle brackets, and normalizes whitespace.
  */
 export function sanitizeText(value: unknown, maxLength: number): string {
   if (typeof value !== 'string') {
     return '';
   }
-  const withoutControls = value.replace(/[\u0000-\u001F\u007F<>]/g, ' ');
+  const withoutControls = value.replace(
+    /[\u0000-\u001F\u007F\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069<>]/g,
+    ' ',
+  );
   const normalized = withoutControls.replace(/\s+/g, ' ').trim();
   return normalized.slice(0, maxLength);
+}
+
+export function validateCityName(raw: unknown): {
+  valid: boolean;
+  city: string;
+  error?: string;
+} {
+  if (typeof raw !== 'string') {
+    return { valid: false, city: '', error: 'Please enter a city or neighborhood name.' };
+  }
+  const rawTrimmed = raw.trim();
+  if (rawTrimmed.length > MAX_CITY_LENGTH) {
+    return {
+      valid: false,
+      city: '',
+      error: `City name must be ${MAX_CITY_LENGTH} characters or fewer.`,
+    };
+  }
+  const cleanCity = sanitizeText(rawTrimmed, MAX_CITY_LENGTH);
+  const hasLetter = /\p{L}/u.test(cleanCity);
+  if (cleanCity.length < 2 || !hasLetter) {
+    return {
+      valid: false,
+      city: '',
+      error: 'Enter a valid city or location name (at least 2 letters).',
+    };
+  }
+  return { valid: true, city: cleanCity };
+}
+
+export function parseManualAqiInput(raw: unknown): {
+  valid: boolean;
+  value: number | null;
+  error?: string;
+} {
+  if (raw === undefined || raw === null || raw === '') {
+    return { valid: true, value: null };
+  }
+
+  const numeric =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string' && /^-?\d+(\.\d+)?$/.test(raw.trim())
+        ? Number(raw.trim())
+        : Number.NaN;
+
+  if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
+    return {
+      valid: false,
+      value: null,
+      error: 'Manual AQI must be a whole number between 0 and 500.',
+    };
+  }
+  if (numeric < MIN_AQI || numeric > MAX_AQI) {
+    return {
+      valid: false,
+      value: null,
+      error: `Manual AQI must be between ${MIN_AQI} and ${MAX_AQI}.`,
+    };
+  }
+  return { valid: true, value: numeric };
+}
+
+export function validateLiveAqiReading(raw: unknown): LiveAqiReading | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+  const obj = raw as Record<string, unknown>;
+  const validStatuses = ['available', 'unavailable', 'disabled', 'error'] as const;
+  if (
+    typeof obj.status !== 'string' ||
+    !(validStatuses as readonly string[]).includes(obj.status)
+  ) {
+    return null;
+  }
+  const usAqi =
+    typeof obj.usAqi === 'number' && Number.isFinite(obj.usAqi)
+      ? Math.max(MIN_AQI, Math.min(MAX_AQI, Math.round(obj.usAqi)))
+      : null;
+  const pm25 =
+    typeof obj.pm25 === 'number' && Number.isFinite(obj.pm25) ? obj.pm25 : null;
+  const pm10 =
+    typeof obj.pm10 === 'number' && Number.isFinite(obj.pm10) ? obj.pm10 : null;
+
+  return {
+    status: obj.status as LiveAqiReading['status'],
+    source: typeof obj.source === 'string' ? sanitizeText(obj.source, 120) : null,
+    resolvedLocation:
+      typeof obj.resolvedLocation === 'string'
+        ? sanitizeText(obj.resolvedLocation, 140)
+        : null,
+    usAqi,
+    pm25,
+    pm10,
+    observedAt:
+      typeof obj.observedAt === 'string' ? sanitizeText(obj.observedAt, 60) : null,
+    unitLabel:
+      typeof obj.unitLabel === 'string' ? sanitizeText(obj.unitLabel, 60) : null,
+    note: sanitizeText(obj.note, 320),
+  };
 }
 
 export function validateUserProfileInput(raw: unknown): InputValidationResult {
@@ -215,44 +319,16 @@ export function validateUserProfileInput(raw: unknown): InputValidationResult {
 
   const record = raw as Record<string, unknown>;
 
-  // City validation
-  if (typeof record.city !== 'string') {
-    errors.city = 'Please enter a city or neighborhood name.';
-  } else {
-    const rawTrimmed = record.city.trim();
-    if (rawTrimmed.length > MAX_CITY_LENGTH) {
-      errors.city = `City name must be ${MAX_CITY_LENGTH} characters or fewer.`;
-    } else {
-      const cleanCity = sanitizeText(rawTrimmed, MAX_CITY_LENGTH);
-      const hasLetter = /\p{L}/u.test(cleanCity);
-      if (cleanCity.length < 2 || !hasLetter) {
-        errors.city = 'Enter a valid city or location name (at least 2 letters).';
-      }
-    }
+  const cityCheck = validateCityName(record.city);
+  if (!cityCheck.valid) {
+    errors.city = cityCheck.error;
   }
 
-  // Manual AQI validation (optional)
-  let parsedAqi: number | null = null;
-  if (
-    record.manualAqi !== undefined &&
-    record.manualAqi !== null &&
-    record.manualAqi !== ''
-  ) {
-    const numeric =
-      typeof record.manualAqi === 'number'
-        ? record.manualAqi
-        : typeof record.manualAqi === 'string' && /^-?\d+(\.\d+)?$/.test(record.manualAqi.trim())
-          ? Number(record.manualAqi.trim())
-          : Number.NaN;
-
-    if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
-      errors.manualAqi = 'Manual AQI must be a whole number between 0 and 500.';
-    } else if (numeric < MIN_AQI || numeric > MAX_AQI) {
-      errors.manualAqi = `Manual AQI must be between ${MIN_AQI} and ${MAX_AQI}.`;
-    } else {
-      parsedAqi = numeric;
-    }
+  const aqiCheck = parseManualAqiInput(record.manualAqi);
+  if (!aqiCheck.valid) {
+    errors.manualAqi = aqiCheck.error;
   }
+  const parsedAqi = aqiCheck.value;
 
   // Commute method
   const commuteMethod = record.commuteMethod;

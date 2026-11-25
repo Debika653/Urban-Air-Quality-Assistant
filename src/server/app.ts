@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import {
-  sanitizeText,
+  validateCityName,
   validateUserProfileInput,
   type AiGuidanceResponse,
   type GuidanceApiResult,
@@ -35,6 +35,14 @@ function createRateLimiter(maxRequests: number, windowMs: number) {
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const now = Date.now();
+    if (buckets.size > 500) {
+      for (const [bucketKey, bucket] of buckets.entries()) {
+        if (bucket.resetAt <= now) {
+          buckets.delete(bucketKey);
+        }
+      }
+    }
+
     const key = req.ip || 'unknown';
     const existing = buckets.get(key);
 
@@ -67,6 +75,8 @@ export function createApiApp(customDeps?: Partial<ServerDependencies>) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('X-DNS-Prefetch-Control', 'off');
+    res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
     next();
   });
 
@@ -102,19 +112,25 @@ export function createApiApp(customDeps?: Partial<ServerDependencies>) {
   });
 
   app.get('/api/aqi', aqiLimiter, async (req, res) => {
-    const rawCity = typeof req.query.city === 'string' ? req.query.city : '';
-    const city = sanitizeText(rawCity, 80);
-    if (city.length < 2 || !/\p{L}/u.test(city)) {
+    const cityCheck = validateCityName(req.query.city);
+    if (!cityCheck.valid) {
       res.status(400).json({
-        error: 'Provide a valid city name (at least 2 letters).',
+        error: cityCheck.error || 'Provide a valid city name (at least 2 letters).',
         code: 'INVALID_CITY',
       });
       return;
     }
 
-    const enabled = req.query.enabled !== 'false';
-    const reading = await deps.lookupAqi(city, enabled);
-    res.json({ reading });
+    try {
+      const enabled = req.query.enabled !== 'false';
+      const reading = await deps.lookupAqi(cityCheck.city, enabled);
+      res.json({ reading });
+    } catch {
+      res.status(502).json({
+        error: 'Unable to check live air-quality data right now.',
+        code: 'AQI_LOOKUP_ERROR',
+      });
+    }
   });
 
   app.post('/api/guidance', guidanceLimiter, async (req, res) => {
