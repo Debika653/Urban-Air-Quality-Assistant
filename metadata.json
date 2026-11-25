@@ -1,0 +1,6 @@
+{
+  "name": "CleanAir Companion",
+  "description": "GenAI-powered urban air quality assistant providing low-emission daily routines, indoor air improvements, sustainable alternatives, environmental impact explanations, and winter smog safety guidance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
